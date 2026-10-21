@@ -199,11 +199,13 @@
     const url = URL.createObjectURL(blob);
     const im = new Image();
     im.onload = () => {
-      natW = im.naturalWidth; natH = im.naturalHeight;
+      // スマホの写真など大きい画像は、長辺3200pxまで縮小(メモリ節約。OCRには十分な解像度)
+      const k = Math.min(1, 3200 / Math.max(im.naturalWidth, im.naturalHeight));
+      natW = Math.round(im.naturalWidth * k); natH = Math.round(im.naturalHeight * k);
       srcCanvas = document.createElement('canvas');
       srcCanvas.width = natW; srcCanvas.height = natH;
       srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
-      srcCtx.drawImage(im, 0, 0);
+      srcCtx.drawImage(im, 0, 0, natW, natH);
       roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null;
       buildStage(url);
       fitZoom();
@@ -766,6 +768,20 @@
   };
   window.addEventListener('afterprint', () => $('printArea').replaceChildren());
 
+  // ---- Corkboard Share から画像を受け取る(画像付箋の「文字認識で開く」) ----
+  const CORK_ORIGIN = 'https://hiroshinomac-mini.tail387218.ts.net';
+  window.addEventListener('message', e => {
+    if (e.origin !== CORK_ORIGIN || !window.opener || e.source !== window.opener) return;
+    const d = e.data;
+    if (d && d.type === 'ocr-image' && d.blob instanceof Blob && /^image\//.test(d.blob.type) && d.blob.size <= 50e6) {
+      msg('Corkboard Share から画像を受け取りました。');
+      loadBlob(d.blob);
+    }
+  });
+  if (window.opener && location.hash.includes('from=corkboard')) {
+    msg('Corkboard Share から画像を受け取っています…');
+    try { window.opener.postMessage({ type: 'ocr-ready' }, CORK_ORIGIN); } catch (e) { /* 無視 */ }
+  }
   window.addEventListener('resize', () => { if (img) setZoom(zoom); });
   // テスト用フック
   window.__app = { loadBlob, buildPrint, fill: m => { const g = grid(); m.forEach((row, r) => row.forEach((v, c) => cache.set(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r]), v))); renderResult(); }, state: () => ({ roi, hLines, vLines, cache: [...cache] }), setRoi: r => { roi = r; runAuto(); } };
