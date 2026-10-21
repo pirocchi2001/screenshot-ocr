@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表OCR → CSV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="lib/JsBarcode.all.min.js"></script>
+<script src="detect.js?v=2"></script>
+<style>
+  :root {
+    --bg: #eaf0f6; --panel: #fff; --ink: #14212e; --sub: #5a6b7b; --line: #d3dde7; --field: #f4f7fa;
+    --btn: #173a5c; --btn-ink: #fff; --accent: #f2c200; --hi: #4cacdc; --err: #c0392b; --ok: #23804a;
+    --logo-red: #dc4c54; --logo-yellow: #f4d44c; --logo-teal: #54b4bc; --logo-green: #6cac4c; --logo-blue: #4cacdc;
+    --hline: #0ea5e9; --vline: #e11d48; --roi: #16a34a; --warn: #fff8db;
+    --shadow: 0 1px 2px rgba(20,33,46,.06), 0 6px 18px rgba(20,33,46,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1620; --panel: #18222e; --ink: #e6edf4; --sub: #93a4b5; --line: #2b3a4a; --field: #121b25;
+            --btn: #5aa9e6; --btn-ink: #0e1114; --warn: #3a3418; --err: #ff7b6b; --ok: #5ccf8a; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 14px/1.6 "Noto Sans JP", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif; display: flex; flex-direction: column; }
+  /* ヘッダー(ロゴが白地なので常に白。5色の帯を下に引く) */
+  header { --panel: #fff; --ink: #14212e; --line: #d3dde7; --sub: #5a6b7b; --btn: #173a5c; --btn-ink: #fff;
+    position: relative; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+    padding: 10px 24px 14px; background: var(--panel); color: var(--ink); box-shadow: 0 2px 12px rgba(20,33,46,.10); }
+  header::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 4px;
+    background: linear-gradient(90deg, var(--logo-red) 0 20%, var(--logo-yellow) 20% 40%, var(--logo-teal) 40% 60%, var(--logo-green) 60% 80%, var(--logo-blue) 80% 100%); }
+  .brand { display: flex; align-items: center; gap: 18px; min-width: 0; }
+  .logo { height: 42px; width: auto; display: block; }
+  .ttl { border-left: 1px solid var(--line); padding-left: 18px; }
+  h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: .04em; line-height: 1.4; }
+  .sub { font-size: 12px; color: var(--sub); }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  button, select { font: inherit; font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer;
+    transition: background-color .15s, border-color .15s, box-shadow .15s; }
+  button:hover:not(:disabled) { border-color: var(--btn); box-shadow: 0 2px 8px rgba(23,58,92,.18); }
+  button.primary { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); font-weight: 700; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.12); }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+  .opt { display: flex; align-items: center; gap: 6px; color: var(--sub); font-size: 13px; }
+  .opt input[type=range] { width: 90px; accent-color: var(--btn); }
+  .opt input[type=checkbox] { accent-color: var(--btn); }
+  .sep { width: 1px; height: 24px; background: var(--line); }
+  /* 操作パネル(カード) */
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
+  .tools { margin: 16px 16px 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .tools .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .tools .lbl { font-size: 13px; font-weight: 700; color: var(--ink); }
+  #status { display: flex; gap: 12px; align-items: center; min-height: 24px; font-size: 13px; color: var(--sub); border-top: 1px solid var(--line); padding-top: 8px; }
+  #bar { flex: 0 0 160px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; visibility: hidden; }
+  #bar i { display: block; height: 100%; width: 0; background: var(--btn); }
+  #guide { margin: 12px 16px 0; padding: 14px 18px; font-size: 13.5px; }
+  #guide[hidden] { display: none; }
+  #guide h2 { margin: 0 0 6px; font-size: 15px; }
+  #guide ol { margin: 0; padding-left: 1.4em; }
+  main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 16px; overflow: hidden; }
+  .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .pane > h2 { margin: 0; padding: 8px 14px; font-size: 14px; font-weight: 700; color: var(--ink); border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+  .pane > h2 #dims { font-weight: 400; color: var(--sub); font-size: 13px; }
+  .pane > h2 .grow { flex: 1; }
+  .scroll { flex: 1; overflow: auto; min-height: 0; }
+  /* 認識結果の表 */
+  #result { border-collapse: collapse; font-size: 13px; }
+  #result th { position: sticky; top: 0; background: var(--bg); color: var(--sub); font-weight: 500; font-size: 11px; padding: 2px 6px; border: 1px solid var(--line); z-index: 1; }
+  #result th.rn { left: 0; z-index: 2; }
+  #result td.rn { position: sticky; left: 0; background: var(--bg); color: var(--sub); font-size: 11px; text-align: center; border: 1px solid var(--line); padding: 2px 6px; }
+  #result td.c { border: 1px solid var(--line); padding: 3px 7px; min-width: 56px; white-space: pre-wrap; outline: none; }
+  #result td.c .t { display: block; outline: none; min-height: 1.4em; }
+  #result td.c:focus-within { box-shadow: inset 0 0 0 2px var(--btn); }
+  #result td.c .t.bad { color: #e11d48; font-weight: 700; }
+  #result td.c .bc { margin-top: 3px; user-select: none; }
+  #result td.c .bc svg { display: block; max-width: 100%; height: auto; background: #fff; }
+  #result td.c .bc .ok { color: #16a34a; font-size: 11px; }
+  #result td.c .bc .ng { color: #e11d48; font-size: 11px; }
+  #result td.c.stale { background: var(--warn); }
+  /* 原画 */
+  #stage { position: relative; display: inline-block; user-select: none; -webkit-user-select: none; }
+  #stage img { display: block; max-width: none; image-rendering: auto; }
+  #ov { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
+  #ov.adding-h { cursor: row-resize; } #ov.adding-v { cursor: col-resize; }
+  .roi { position: absolute; border: 2px solid var(--roi); background: rgba(22,163,74,.05); pointer-events: none; }
+  .hl { position: absolute; background: rgba(76,172,220,.28); border: 1px solid var(--hi); pointer-events: none; }
+  .ln { position: absolute; }
+  .ln.h { height: 9px; cursor: ns-resize; margin-top: -4px; }
+  .ln.v { width: 9px; cursor: ew-resize; margin-left: -4px; }
+  .ln::after { content: ""; position: absolute; }
+  .ln.h::after { left: 0; right: 0; top: 4px; border-top: 2px dashed var(--hline); }
+  .ln.v::after { top: 0; bottom: 0; left: 4px; border-left: 2px dashed var(--vline); }
+  .ln:hover::after { border-style: solid; }
+  .hd { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px; background: var(--roi); border: 1px solid #fff; border-radius: 2px; }
+  .empty { padding: 40px 20px; text-align: center; color: var(--sub); }
+  .empty kbd { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  .help { color: var(--sub); font-size: 12px; padding: 6px 14px; border-top: 1px solid var(--line); }
+  /* 印刷(PDF出力)用: 画面では非表示 */
+  #printArea { display: none; }
+  @media print {
+    html, body { height: auto; background: #fff; display: block; }
+    body > *:not(#printArea) { display: none !important; }
+    #printArea { display: block; color: #000; font: 8.5pt/1.3 -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+    #printArea .pg { position: relative; overflow: hidden; break-after: page; page-break-after: always; }
+    #printArea .pg:last-child { break-after: auto; page-break-after: auto; }
+    #printArea table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    #printArea td { border: 0.3mm solid #666; padding: 0.6mm 1.5mm; vertical-align: middle; word-break: break-all; overflow: hidden; }
+    #printArea td .cb { display: block; }
+    #printArea td .cb.jan { display: flex; align-items: center; gap: 2.5mm; white-space: nowrap; }
+    #printArea td .cb.jan .t { flex: 0 0 auto; }
+    #printArea td .cb.jan svg { flex: 0 0 auto; margin: 0; }
+    #printArea td .t { display: block; }
+    #printArea td .t.bad { color: #d00000; font-weight: 700; }
+    #printArea td svg { display: block; }
+    #printArea .ft { position: absolute; left: 0; right: 0; bottom: 0; font-size: 7.5pt; color: #444; display: flex; justify-content: space-between; }
+  }
+  .zb { min-width: 36px; font-size: 15px; font-weight: 700; padding: 3px 10px; }
+  .pane > h2 button, .pane > h2 select { padding: 3px 10px; font-size: 13px; }
+  @media (max-width: 800px) { main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); } header { padding: 10px 14px 14px; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <img class="logo" src="logo-toylopark.png" alt="TOYLO PARK" width="177" height="42">
+    <div class="ttl">
+      <h1>表OCR → CSV</h1>
+      <div class="sub">スクリーンショットの表を貼り付けるだけ。データはブラウザ内だけで処理されます</div>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="btnGuide" aria-expanded="false" aria-controls="guide">📖 つかいかた</button>
+  </div>
+</header>
+<section id="guide" class="card" hidden>
+  <h2>つかいかた</h2>
+  <ol>
+    <li>表のスクリーンショットを <b>Ctrl/⌘+V</b> で貼り付けます(「画像を開く」やドロップも可)。</li>
+    <li>右の原画で、表の範囲をドラッグして指定します。仕切り線が自動で入り、OCRが始まります。</li>
+    <li>線をドラッグして位置を調整できます(ダブルクリックで削除、「＋横線」「＋縦線」で追加)。</li>
+    <li>左の認識結果は、クリックして直接修正できます。JANコードは自動でチェックし、正しければバーコード、誤りなら赤字で表示します。</li>
+    <li>「CSV保存」でCSV、「PDF出力」でA4・1ページ20行のPDFを作ります。</li>
+  </ol>
+</section>
+<section class="card tools">
+  <div class="row">
+    <button id="btnFile">画像を開く</button>
+    <button id="btnPaste">クリップボードから貼付</button>
+    <input id="file" type="file" accept="image/*" hidden>
+    <span class="sep"></span>
+    <button id="btnOcr" class="primary" disabled>OCR実行</button>
+    <button id="btnOcrAll" disabled title="編集内容も含め、すべてのセルを認識し直します">全て再認識</button>
+    <span class="sep"></span>
+    <button id="btnCsv" disabled>CSV保存</button>
+    <button id="btnCopy" disabled title="Excelなどに貼り付け可能(タブ区切り)">コピー</button>
+    <button id="btnPdf" disabled title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFになります">PDF出力</button>
+    <select id="pdfDir" title="用紙の向き"><option value="portrait">A4 縦</option><option value="landscape">A4 横</option></select>
+    <label class="opt"><input type="checkbox" id="optTrim"> 空の行・列を除く</label>
+  </div>
+  <div class="row">
+    <span class="lbl">仕切り</span>
+    <button id="btnAddH" disabled>＋横線</button>
+    <button id="btnAddV" disabled>＋縦線</button>
+    <button id="btnAuto" disabled>自動分割をやり直す</button>
+    <button id="btnClear" disabled>仕切りを消す</button>
+    <label class="opt">行間の最小幅 <input type="range" id="rowGap" min="1" max="12" value="2"><b id="rowGapV">2px</b></label>
+    <label class="opt">列間の最小幅 <input type="range" id="colK" min="0.3" max="3" step="0.1" value="0.8"><b id="colKV">0.8×</b></label>
+    <span class="sep"></span>
+    <label class="opt"><input type="checkbox" id="optAuto" checked> 枠指定後に自動OCR</label>
+    <label class="opt">精度 <select id="model"><option value="best">高精度(大・初回のみ待ち)</option><option value="fast">標準(軽量)</option></select></label>
+  </div>
+  <div id="status"><span id="msg">画像を Ctrl/⌘+V で貼り付けてください。</span><div id="bar"><i></i></div></div>
+</section>
+<main>
+  <section class="pane">
+    <h2><span>認識結果(クリックで編集)</span><span class="grow"></span><span id="dims"></span></h2>
+    <div class="scroll" id="resultWrap"><div class="empty">画像を貼り付けて、右の原画で表の範囲をドラッグしてください。</div></div>
+  </section>
+  <section class="pane">
+    <h2><span>原画</span><span class="grow"></span>
+      <button id="zOut" class="zb" title="縮小">−</button><span id="zv" style="min-width:42px;text-align:center">100%</span><button id="zIn" class="zb" title="拡大">＋</button><button id="z100" title="等倍(100%)">100%</button><button id="zFit" title="ウィンドウ幅に合わせる">全体</button></h2>
+    <div class="scroll" id="imgWrap"><div class="empty"><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>V</kbd> でスクリーンショットを貼り付け<br>またはファイルをここにドロップ</div></div>
+    <div class="help">ドラッグで表の範囲を指定 / 線をドラッグで移動・ダブルクリックで削除 / ＋横線・＋縦線のあと原画をクリックで追加 / Ctrl+ホイールで拡大縮小</div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const msg = t => { $('msg').textContent = t; };
+
+  // ---- 状態 ----
+  let srcCanvas = null, srcCtx = null, natW = 0, natH = 0;
+  let zoom = 1;
+  let roi = null;                  // {x,y,w,h} 画像px
+  let hLines = [], vLines = [];    // 画像px(絶対座標)
+  let cache = new Map();           // セル矩形キー → テキスト
+  let addMode = null;              // 'h' | 'v' | null
+  let hlRect = null;               // 左表のホバー強調
+  let worker = null, workerModel = null, workerPsm = null, busy = false;
+  let img = null, ov = null, stage = null;
+
+  // ---- 画像の取り込み ----
+  function loadBlob(blob) {
+    const url = URL.createObjectURL(blob);
+    const im = new Image();
+    im.onload = () => {
+      natW = im.naturalWidth; natH = im.naturalHeight;
+      srcCanvas = document.createElement('canvas');
+      srcCanvas.width = natW; srcCanvas.height = natH;
+      srcCtx = srcCanvas.getContext('2d', { willReadFrequently: true });
+      srcCtx.drawImage(im, 0, 0);
+      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null;
+      buildStage(url);
+      fitZoom();
+      renderAll();
+      msg(`画像を読み込みました (${natW}×${natH})。原画上で表の範囲をドラッグしてください。`);
+    };
+    im.onerror = () => msg('画像を読み込めませんでした。');
+    im.src = url;
+  }
+
+  function buildStage(url) {
+    const wrap = $('imgWrap');
+    wrap.innerHTML = '';
+    stage = document.createElement('div'); stage.id = 'stage';
+    img = document.createElement('img'); img.src = url; img.draggable = false;
+    ov = document.createElement('div'); ov.id = 'ov';
+    stage.append(img, ov); wrap.append(stage);
+    ov.addEventListener('pointerdown', onDown);
+    ov.addEventListener('pointermove', onMove);
+    ov.addEventListener('pointerup', onUp);
+    ov.addEventListener('pointercancel', onUp);
+    ov.addEventListener('dblclick', onDbl);
+  }
+
+  document.addEventListener('paste', e => {
+    const it = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+    if (it) { e.preventDefault(); loadBlob(it.getAsFile()); }
+  });
+  $('btnPaste').onclick = async () => {
+    try {
+      for (const item of await navigator.clipboard.read()) {
+        const t = item.types.find(t => t.startsWith('image/'));
+        if (t) { loadBlob(await item.getType(t)); return; }
+      }
+      msg('クリップボードに画像がありません。');
+    } catch { msg('ブラウザが貼り付けを許可しませんでした。Ctrl/⌘+V をお使いください。'); }
+  };
+  $('btnFile').onclick = () => $('file').click();
+  $('file').onchange = e => { if (e.target.files[0]) loadBlob(e.target.files[0]); e.target.value = ''; };
+  $('imgWrap').addEventListener('dragover', e => e.preventDefault());
+  $('imgWrap').addEventListener('drop', e => {
+    e.preventDefault();
+    const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+    if (f) loadBlob(f);
+  });
+
+  // ---- ズーム ----
+  function setZoom(z) {
+    zoom = Math.min(8, Math.max(0.1, z));
+    if (!img) return;
+    stage.style.width = natW * zoom + 'px'; stage.style.height = natH * zoom + 'px';
+    img.style.width = natW * zoom + 'px'; img.style.height = natH * zoom + 'px';
+    $('zv').textContent = Math.round(zoom * 100) + '%';
+    renderOverlay();
+  }
+  function fitZoom() { setZoom(Math.min(2, ($('imgWrap').clientWidth - 4) / natW)); }
+  $('zIn').onclick = () => setZoom(zoom * 1.25);
+  $('zOut').onclick = () => setZoom(zoom / 1.25);
+  $('zFit').onclick = () => img && fitZoom();
+  $('z100').onclick = () => img && setZoom(1);
+  $('imgWrap').addEventListener('wheel', e => {
+    if (!e.ctrlKey || !img) return;
+    e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1));
+  }, { passive: false });
+
+  // ---- 格子の計算 ----
+  const r2 = v => Math.round(v);
+  function grid() {
+    if (!roi) return null;
+    const xs = [roi.x, ...vLines.slice().sort((a, b) => a - b), roi.x + roi.w].map(r2);
+    const ys = [roi.y, ...hLines.slice().sort((a, b) => a - b), roi.y + roi.h].map(r2);
+    return { xs, ys };
+  }
+  const keyOf = (x, y, w, h) => `${x},${y},${w},${h}`;
+
+  // ---- オーバーレイ描画 ----
+  function div(cls, x, y, w, h, extra) {
+    const d = document.createElement('div');
+    d.className = cls;
+    d.style.left = x * zoom + 'px'; d.style.top = y * zoom + 'px';
+    if (w != null) d.style.width = w * zoom + 'px';
+    if (h != null) d.style.height = h * zoom + 'px';
+    if (extra) Object.assign(d.dataset, extra);
+    return d;
+  }
+  function renderOverlay() {
+    if (!ov) return;
+    ov.replaceChildren();
+    ov.className = addMode ? 'adding-' + addMode : '';
+    if (!roi) return;
+    ov.append(div('roi', roi.x - 1 / zoom * 2, roi.y - 1 / zoom * 2, roi.w, roi.h));
+    if (hlRect) ov.append(div('hl', hlRect.x, hlRect.y, hlRect.w, hlRect.h));
+    hLines.forEach((y, i) => ov.append(div('ln h', roi.x, y, roi.w, null, { k: 'h', i })));
+    vLines.forEach((x, i) => ov.append(div('ln v', x, roi.y, null, roi.h, { k: 'v', i })));
+    const { x, y, w, h } = roi;
+    const pts = { tl: [x, y], tr: [x + w, y], bl: [x, y + h], br: [x + w, y + h], t: [x + w / 2, y], b: [x + w / 2, y + h], l: [x, y + h / 2], r: [x + w, y + h / 2] };
+    for (const [n, [px, py]] of Object.entries(pts)) {
+      const d = div('hd', px, py, null, null, { k: 'hd', n });
+      d.style.cursor = { tl: 'nwse-resize', br: 'nwse-resize', tr: 'nesw-resize', bl: 'nesw-resize', t: 'ns-resize', b: 'ns-resize', l: 'ew-resize', r: 'ew-resize' }[n];
+      ov.append(d);
+    }
+  }
+
+  // ---- マウス/タッチ操作 ----
+  let drag = null;
+  const pt = e => {
+    const b = ov.getBoundingClientRect();
+    return { x: Math.min(natW, Math.max(0, (e.clientX - b.left) / zoom)), y: Math.min(natH, Math.max(0, (e.clientY - b.top) / zoom)) };
+  };
+  function onDown(e) {
+    const p = pt(e), t = e.target.dataset || {};
+    ov.setPointerCapture(e.pointerId);
+    if (addMode && roi) {
+      if (addMode === 'h' && p.y > roi.y && p.y < roi.y + roi.h) hLines.push(p.y);
+      if (addMode === 'v' && p.x > roi.x && p.x < roi.x + roi.w) vLines.push(p.x);
+      addMode = null; changed(); return;
+    }
+    if (t.k === 'h' || t.k === 'v') drag = { type: 'line', k: t.k, i: +t.i };
+    else if (t.k === 'hd') drag = { type: 'resize', n: t.n };
+    else drag = { type: 'new', x0: p.x, y0: p.y };
+  }
+  function onMove(e) {
+    if (!drag) return;
+    const p = pt(e);
+    if (drag.type === 'line') {
+      if (drag.k === 'h') hLines[drag.i] = Math.min(roi.y + roi.h - 1, Math.max(roi.y + 1, p.y));
+      else vLines[drag.i] = Math.min(roi.x + roi.w - 1, Math.max(roi.x + 1, p.x));
+      renderOverlay(); renderResult();
+    } else if (drag.type === 'resize') {
+      let { x, y, w, h } = roi; const n = drag.n, R = x + w, B = y + h;
+      if (n.includes('l')) { x = Math.min(p.x, R - 8); w = R - x; }
+      if (n.includes('r')) { w = Math.max(8, p.x - x); }
+      if (n.includes('t')) { y = Math.min(p.y, B - 8); h = B - y; }
+      if (n.includes('b')) { h = Math.max(8, p.y - y); }
+      roi = { x, y, w, h };
+      renderOverlay();
+    } else if (drag.type === 'new') {
+      roi = { x: Math.min(drag.x0, p.x), y: Math.min(drag.y0, p.y), w: Math.abs(p.x - drag.x0), h: Math.abs(p.y - drag.y0) };
+      renderOverlay();
+    }
+  }
+  function onUp() {
+    if (!drag) return;
+    const d = drag; drag = null;
+    if (d.type === 'new') {
+      if (roi.w < 12 || roi.h < 12) { roi = null; hLines = []; vLines = []; changed(); return; }
+      roi = { x: r2(roi.x), y: r2(roi.y), w: r2(roi.w), h: r2(roi.h) };
+      runAuto();
+      if ($('optAuto').checked) runOcr(false);
+    } else if (d.type === 'resize') {
+      roi = { x: r2(roi.x), y: r2(roi.y), w: r2(roi.w), h: r2(roi.h) };
+      hLines = hLines.filter(y => y > roi.y && y < roi.y + roi.h);
+      vLines = vLines.filter(x => x > roi.x && x < roi.x + roi.w);
+      changed();
+    } else changed();
+  }
+  function onDbl(e) {
+    const t = e.target.dataset || {};
+    if (t.k === 'h') hLines.splice(+t.i, 1);
+    else if (t.k === 'v') vLines.splice(+t.i, 1);
+    else return;
+    changed();
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { addMode = null; renderOverlay(); }
+  });
+
+  // ---- 自動分割 ----
+  function grayOf(x, y, w, h) {
+    const id = srcCtx.getImageData(x, y, w, h).data;
+    const gray = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = (id[j] * 299 + id[j + 1] * 587 + id[j + 2] * 114) / 1000;
+    return gray;
+  }
+  function runAuto() {
+    if (!roi) return;
+    // まず枠を内容の範囲まで詰める(余白が空の行・列になるのを防ぐ)
+    const bb = TableDetect.inkBBox(grayOf(roi.x, roi.y, roi.w, roi.h), roi.w, roi.h);
+    if (bb) roi = { x: roi.x + bb.x, y: roi.y + bb.y, w: bb.w, h: bb.h };
+    const { x, y, w, h } = roi;
+    const g = TableDetect.detectGrid(grayOf(x, y, w, h), w, h, { rowGap: +$('rowGap').value, colK: +$('colK').value });
+    hLines = g.h.map(v => y + v);
+    vLines = g.v.map(v => x + v);
+    changed();
+    const gr = grid();
+    msg(`自動分割: ${gr.ys.length - 1}行 × ${gr.xs.length - 1}列。線をドラッグして調整できます。`);
+  }
+  $('btnAuto').onclick = runAuto;
+  $('btnClear').onclick = () => { hLines = []; vLines = []; changed(); };
+  $('btnAddH').onclick = () => { addMode = addMode === 'h' ? null : 'h'; renderOverlay(); if (addMode) msg('横線を入れる位置を原画上でクリックしてください (Escで中止)。'); };
+  $('btnAddV').onclick = () => { addMode = addMode === 'v' ? null : 'v'; renderOverlay(); if (addMode) msg('縦線を入れる位置を原画上でクリックしてください (Escで中止)。'); };
+  for (const [id, out, f] of [['rowGap', 'rowGapV', v => v + 'px'], ['colK', 'colKV', v => (+v).toFixed(1) + '×']]) {
+    $(id).oninput = () => { $(out).textContent = f($(id).value); };
+    $(id).onchange = () => { if (roi) runAuto(); };
+  }
+
+  // ---- 左の結果表 ----
+  function changed() { renderOverlay(); renderResult(); updateButtons(); }
+  function updateButtons() {
+    const has = !!roi;
+    for (const id of ['btnOcr', 'btnOcrAll', 'btnCsv', 'btnCopy', 'btnPdf', 'btnAddH', 'btnAddV', 'btnAuto', 'btnClear']) $(id).disabled = !has || (busy && id.startsWith('btnOcr'));
+  }
+  function renderAll() { renderOverlay(); renderResult(); updateButtons(); }
+
+  function renderResult() {
+    const wrap = $('resultWrap');
+    const g = grid();
+    if (!g) { wrap.innerHTML = '<div class="empty">原画で表の範囲をドラッグしてください。</div>'; $('dims').textContent = ''; return; }
+    const { xs, ys } = g;
+    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列`;
+    const tbl = document.createElement('table'); tbl.id = 'result';
+    const head = tbl.createTHead().insertRow();
+    head.insertCell().outerHTML = '<th class="rn"></th>';
+    for (let c = 0; c < xs.length - 1; c++) head.insertCell().outerHTML = `<th>${c + 1}</th>`;
+    const body = tbl.createTBody();
+    for (let r = 0; r < ys.length - 1; r++) {
+      const tr = body.insertRow();
+      const rn = tr.insertCell(); rn.className = 'rn'; rn.textContent = r + 1;
+      for (let c = 0; c < xs.length - 1; c++) {
+        const rect = { x: xs[c], y: ys[r], w: xs[c + 1] - xs[c], h: ys[r + 1] - ys[r] };
+        const key = keyOf(rect.x, rect.y, rect.w, rect.h);
+        const td = tr.insertCell(); td.className = 'c';
+        td.dataset.key = key; td.dataset.r = r; td.dataset.c = c;
+        const t = document.createElement('span'); t.className = 't'; t.contentEditable = 'plaintext-only';
+        const bc = document.createElement('div'); bc.className = 'bc'; bc.contentEditable = 'false';
+        td.append(t, bc);
+        if (cache.has(key)) setCell(td, cache.get(key)); else td.classList.add('stale');
+        t.addEventListener('input', () => { cache.set(key, t.textContent); td.classList.remove('stale'); decorate(td); });
+        t.addEventListener('focus', () => { hlRect = rect; renderOverlay(); scrollToRect(rect); });
+        td.addEventListener('mouseenter', () => { hlRect = rect; renderOverlay(); });
+        td.addEventListener('mouseleave', () => { hlRect = null; renderOverlay(); });
+        t.addEventListener('keydown', e => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); body.rows[r + 1]?.cells[c + 1]?.querySelector('.t').focus(); }
+        });
+      }
+    }
+    // 編集中のセルを失わないよう、ドラッグ中以外のみ差し替え
+    wrap.replaceChildren(tbl);
+  }
+  // ---- JANコード: チェックデジット検証とバーコード表示 ----
+  function janCheck(d) {           // d: 8桁または13桁の数字列
+    const n = d.length, body = d.slice(0, -1);
+    let sum = 0;
+    for (let i = 0; i < body.length; i++) {
+      const v = +body[i];
+      sum += n === 13 ? (i % 2 ? v * 3 : v) : (i % 2 ? v : v * 3);
+    }
+    const cd = (10 - sum % 10) % 10;
+    return { ok: cd === +d[n - 1], expect: cd };
+  }
+  function findJan(text) {
+    const m = text.match(/(?<![\d])(?:\d[ \-‐ー−]?){12}\d(?![\d])/);
+    if (m) return m[0].replace(/\D/g, '');
+    const whole = text.replace(/[\s\-‐ー−]/g, '');
+    return /^\d{8}$/.test(whole) ? whole : null;
+  }
+  function setCell(td, text) { td.querySelector('.t').textContent = text; decorate(td); }
+  function decorate(td) {
+    const t = td.querySelector('.t'), bc = td.querySelector('.bc');
+    bc.replaceChildren(); t.classList.remove('bad'); t.removeAttribute('title');
+    const jan = findJan(t.textContent);
+    if (!jan) return;
+    const { ok, expect } = janCheck(jan);
+    if (ok) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      try {
+        JsBarcode(svg, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 50, margin: 4, displayValue: false, flat: true });
+        bc.append(svg);
+      } catch (e) { /* 描画不可は無視 */ }
+      const m = document.createElement('div'); m.className = 'ok'; m.textContent = '✓ チェックデジットOK'; bc.append(m);
+    } else {
+      t.classList.add('bad');
+      t.title = `チェックデジット不一致(末尾は ${expect} のはず)`;
+      const m = document.createElement('div'); m.className = 'ng';
+      m.textContent = `✗ チェックデジット不一致(末尾は ${expect} のはず)`; bc.append(m);
+    }
+  }
+  function scrollToRect(rect) {
+    const wrap = $('imgWrap');
+    const x = rect.x * zoom, y = rect.y * zoom, w = rect.w * zoom, h = rect.h * zoom;
+    if (x < wrap.scrollLeft || x + w > wrap.scrollLeft + wrap.clientWidth) wrap.scrollLeft = x - 20;
+    if (y < wrap.scrollTop || y + h > wrap.scrollTop + wrap.clientHeight) wrap.scrollTop = y - 20;
+  }
+
+  // ---- セルの前処理 ----
+  function prepCell(r) {
+    const ins = 2;
+    const x = Math.max(0, r.x + ins), y = Math.max(0, r.y + ins);
+    const w = Math.min(natW, r.x + r.w - ins) - x, h = Math.min(natH, r.y + r.h - ins) - y;
+    if (w < 4 || h < 4) return null;
+    const d = srcCtx.getImageData(x, y, w, h).data;
+    const gray = new Uint8Array(w * h);
+    for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = (d[j] * 299 + d[j + 1] * 587 + d[j + 2] * 114) / 1000;
+    const bg = TableDetect.modeGray(gray);
+    // 背景との差を濃さに変換(白地黒文字・黒地白文字のどちらも同じ極性にそろえる)
+    const out = new Uint8Array(w * h), ink = new Uint8Array(w * h);
+    for (let i = 0; i < out.length; i++) {
+      const diff = Math.abs(gray[i] - bg);
+      out[i] = 255 - Math.min(255, diff * 1.6);
+      ink[i] = diff > TableDetect.INK_T ? 1 : 0;
+    }
+    // 端に残った罫線の断片を消す
+    const wipeRow = yy => { for (let xx = 0; xx < w; xx++) { out[yy * w + xx] = 255; ink[yy * w + xx] = 0; } };
+    const wipeCol = xx => { for (let yy = 0; yy < h; yy++) { out[yy * w + xx] = 255; ink[yy * w + xx] = 0; } };
+    const rowFrac = yy => { let n = 0; for (let xx = 0; xx < w; xx++) n += ink[yy * w + xx]; return n / w; };
+    const colFrac = xx => { let n = 0; for (let yy = 0; yy < h; yy++) n += ink[yy * w + xx]; return n / h; };
+    for (let k = 0; k < 6; k++) {
+      if (k < h && rowFrac(k) >= 0.8) wipeRow(k);
+      if (h - 1 - k >= 0 && rowFrac(h - 1 - k) >= 0.8) wipeRow(h - 1 - k);
+      if (k < w && colFrac(k) >= 0.8) wipeCol(k);
+      if (w - 1 - k >= 0 && colFrac(w - 1 - k) >= 0.8) wipeCol(w - 1 - k);
+    }
+    // インクの外接矩形と行バンド数
+    let x0 = w, x1 = -1, y0 = h, y1 = -1, cnt = 0;
+    const rowSum = new Int32Array(h);
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) if (ink[yy * w + xx]) {
+      cnt++; rowSum[yy]++;
+      if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (yy < y0) y0 = yy; if (yy > y1) y1 = yy;
+    }
+    if (cnt < 6 || x1 < x0 || y1 < y0) return null;
+    const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    let bands = 0, inBand = false, gapRun = 0;
+    const minGap = Math.max(2, Math.round(bh * 0.12));
+    for (let yy = y0; yy <= y1; yy++) {
+      if (rowSum[yy] > 0) { if (!inBand) { bands++; inBand = true; } gapRun = 0; }
+      else if (inBand && ++gapRun >= minGap) inBand = false;
+    }
+    // 拡大(OCRは文字高が概ね30〜60pxで最も安定)
+    const lineH = bh / Math.max(1, bands);
+    let s = Math.round(40 / Math.max(6, lineH)); s = Math.min(4, Math.max(1, s));
+    while (bw * s > 3500 && s > 1) s--;
+    const src = document.createElement('canvas'); src.width = w; src.height = h;
+    const sctx = src.getContext('2d'); const im = sctx.createImageData(w, h);
+    for (let i = 0, j = 0; i < out.length; i++, j += 4) { im.data[j] = im.data[j + 1] = im.data[j + 2] = out[i]; im.data[j + 3] = 255; }
+    sctx.putImageData(im, 0, 0);
+    const pad = 14, cw = bw * s + pad * 2, ch = bh * s + pad * 2;
+    const dst = document.createElement('canvas'); dst.width = cw; dst.height = ch;
+    const dctx = dst.getContext('2d');
+    dctx.fillStyle = '#fff'; dctx.fillRect(0, 0, cw, ch);
+    dctx.imageSmoothingEnabled = true; dctx.imageSmoothingQuality = 'high';
+    dctx.drawImage(src, x0, y0, bw, bh, pad, pad, bw * s, bh * s);
+    return { canvas: dst, psm: bands <= 1 ? '7' : '6' };
+  }
+
+  // ---- OCR ----
+  function cleanText(t) {
+    const cjk = '\\u3000-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef';
+    return t.replace(/[ \t]*\r?\n[ \t]*/g, ' ').trim()
+      .replace(new RegExp(`(?<=[${cjk}])\\s+(?=[${cjk}])`, 'g'), '')
+      .replace(/\s{2,}/g, ' ');
+  }
+  async function getWorker() {
+    const model = $('model').value;
+    if (worker && workerModel === model) return worker;
+    if (worker) { await worker.terminate(); worker = null; }
+    msg('OCRエンジンを準備中… (初回は日本語データのダウンロードに時間がかかります)');
+    setBar(0);
+    const langPath = model === 'best' ? 'https://tessdata.projectnaptha.com/4.0.0_best' : 'https://tessdata.projectnaptha.com/4.0.0';
+    worker = await Tesseract.createWorker('jpn+eng', 1, {
+      langPath,
+      logger: m => { if (/loading|initializing/.test(m.status)) setBar(m.progress); },
+    });
+    await worker.setParameters({ preserve_interword_spaces: '1' });
+    workerModel = model; workerPsm = null;
+    return worker;
+  }
+  function setBar(p) {
+    $('bar').style.visibility = p == null ? 'hidden' : 'visible';
+    $('bar').firstElementChild.style.width = Math.round((p || 0) * 100) + '%';
+  }
+
+  async function runOcr(all) {
+    if (!roi || busy) return;
+    busy = true; updateButtons();
+    try {
+      const w = await getWorker();
+      const g = grid(); const todo = [];
+      for (let r = 0; r < g.ys.length - 1; r++) for (let c = 0; c < g.xs.length - 1; c++) {
+        const rect = { x: g.xs[c], y: g.ys[r], w: g.xs[c + 1] - g.xs[c], h: g.ys[r + 1] - g.ys[r] };
+        const key = keyOf(rect.x, rect.y, rect.w, rect.h);
+        if (all || !cache.has(key)) todo.push({ rect, key });
+      }
+      if (!todo.length) { msg('認識していないセルはありません。'); return; }
+      const roiAtStart = roi;
+      for (let i = 0; i < todo.length; i++) {
+        setBar(i / todo.length); msg(`認識中… ${i + 1} / ${todo.length} セル`);
+        const { rect, key } = todo[i];
+        const p = prepCell(rect);
+        let text = '';
+        if (p) {
+          if (workerPsm !== p.psm) { await w.setParameters({ tessedit_pageseg_mode: p.psm }); workerPsm = p.psm; }
+          text = cleanText((await w.recognize(p.canvas)).data.text);
+        }
+        cache.set(key, text);
+        const td = document.querySelector(`#result td.c[data-key="${key}"]`);
+        if (td) { setCell(td, text); td.classList.remove('stale'); }
+        if (roi !== roiAtStart && !roi) break;
+      }
+      msg(`完了: ${todo.length} セルを認識しました。誤りは左の表で直接修正できます。`);
+    } catch (err) {
+      console.error(err); msg('OCRに失敗しました: ' + (err.message || err));
+    } finally {
+      busy = false; setBar(null); updateButtons();
+    }
+  }
+  $('btnOcr').onclick = () => runOcr(false);
+  $('btnOcrAll').onclick = () => runOcr(true);
+  $('model').onchange = () => msg('精度設定を変更しました。次回のOCRから反映されます。');
+
+  // ---- CSV / コピー ----
+  function matrix() {
+    const g = grid(); if (!g) return [];
+    let rows = [];
+    for (let r = 0; r < g.ys.length - 1; r++) {
+      const row = [];
+      for (let c = 0; c < g.xs.length - 1; c++) row.push(cache.get(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r])) || '');
+      rows.push(row);
+    }
+    if ($('optTrim').checked) {
+      rows = rows.filter(r => r.some(v => v.trim()));
+      const keep = (rows[0] || []).map((_, c) => rows.some(r => r[c].trim()));
+      rows = rows.map(r => r.filter((_, c) => keep[c]));
+    }
+    return rows;
+  }
+  const csvCell = v => /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  $('btnCsv').onclick = () => {
+    const csv = '﻿' + matrix().map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    const a = document.createElement('a');
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    a.download = `table_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.csv`;
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    msg('CSVを保存しました(UTF-8 BOM付き。Excelでそのまま開けます)。');
+  };
+  $('btnCopy').onclick = async () => {
+    const tsv = matrix().map(r => r.map(v => /[\t"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v).join('\t')).join('\n');
+    try { await navigator.clipboard.writeText(tsv); msg('タブ区切りでコピーしました。ExcelやGoogleスプレッドシートに貼り付けてください。'); }
+    catch { msg('コピーできませんでした。'); }
+  };
+
+  // ---- PDF出力(印刷。A4・1ページ20行) ----
+  const ROWS_PER_PAGE = 20;
+  function buildPrint() {
+    const rows = matrix();
+    const land = $('pdfDir').value === 'landscape';
+    const pageH = (land ? 190 : 277) - 1;           // mm (余白10mmを引いた高さ -1mmの安全マージン)
+    const footH = 5, rowH = (pageH - footH) / ROWS_PER_PAGE;
+    const bcH = Math.max(3, rowH - 3.2);
+    const pageW = land ? 277 : 190;
+    $('pageStyle').textContent = `@page { size: A4 ${land ? 'landscape' : 'portrait'}; margin: 10mm; }`;
+    const nCols = rows[0] ? rows[0].length : 0;
+    // 列幅は内容の長さに比例(全角は2文字分)
+    const wts = Array.from({ length: nCols }, (_, c) => {
+      let m = 3;
+      for (const r of rows) {
+        const v = r[c] || '';
+        const len = [...v].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
+        m = Math.max(m, Math.min(len, 40), findJan(v) ? 15 : 0);
+      }
+      return m;
+    });
+    // JAN列は「数字+バーコード」を横並びにするため、最低幅(約60mm)を確保
+    const janCol = Array.from({ length: nCols }, (_, c) => rows.some(r => findJan(r[c] || '')));
+    const fr = wts.map((w, c) => w);
+    const total = fr.reduce((a, b) => a + b, 0);
+    let fracs = fr.map(w => w / total);
+    const minJan = 60 / pageW;
+    const fixed = fracs.map((f, c) => janCol[c] ? Math.max(f, minJan) : f);
+    const fixedSum = fixed.reduce((a, b) => a + b, 0);
+    const janSum = fixed.reduce((a, f, c) => a + (janCol[c] ? f : 0), 0);
+    const rest = Math.max(0.05, 1 - janSum), otherSum = fixedSum - janSum || 1;
+    fracs = fixed.map((f, c) => janCol[c] ? f : f / otherSum * rest);
+    const sum = 1;
+    const pages = Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE));
+    const area = $('printArea'); area.replaceChildren();
+    const stamp = new Date().toLocaleString('ja-JP');
+    for (let p = 0; p < pages; p++) {
+      const pg = document.createElement('div'); pg.className = 'pg'; pg.style.height = pageH + 'mm';
+      const tbl = document.createElement('table');
+      const cg = document.createElement('colgroup');
+      fracs.forEach(f => { const c = document.createElement('col'); c.style.width = (f * 100) + '%'; cg.append(c); });
+      tbl.append(cg);
+      for (let i = p * ROWS_PER_PAGE; i < Math.min(rows.length, (p + 1) * ROWS_PER_PAGE); i++) {
+        const tr = tbl.insertRow(); tr.style.height = rowH + 'mm';
+        for (const v of rows[i]) {
+          const td = tr.insertCell(); const t = document.createElement('span'); t.className = 't'; t.textContent = v;
+          const box = document.createElement('div'); box.className = 'cb'; box.append(t); td.append(box);
+          const jan = findJan(v);
+          if (!jan) continue;
+          const { ok } = janCheck(jan);
+          if (!ok) { t.classList.add('bad'); continue; }
+          const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          try {
+            JsBarcode(svg, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 40, margin: 0, displayValue: false, flat: true });
+            svg.removeAttribute('width'); svg.removeAttribute('height');
+            svg.setAttribute('preserveAspectRatio', 'none');
+            svg.style.height = bcH + 'mm'; svg.style.width = '30mm';
+            box.classList.add('jan'); box.append(svg);
+          } catch (e) { /* 描画不可は無視 */ }
+        }
+      }
+      pg.append(tbl);
+      const ft = document.createElement('div'); ft.className = 'ft';
+      ft.innerHTML = `<span>${stamp}</span><span>${p + 1} / ${pages}</span>`;
+      pg.append(ft); area.append(pg);
+    }
+    return pages;
+  }
+  $('btnPdf').onclick = () => {
+    const pages = buildPrint();
+    msg(`印刷画面を開きます(${pages}ページ)。送信先を「PDFに保存」にしてください。`);
+    setTimeout(() => window.print(), 50);
+  };
+  window.addEventListener('afterprint', () => $('printArea').replaceChildren());
+
+  $('btnGuide').onclick = () => { const g = $('guide'); g.hidden = !g.hidden; $('btnGuide').setAttribute('aria-expanded', String(!g.hidden)); };
+  window.addEventListener('resize', () => { if (img) setZoom(zoom); });
+  // テスト用フック
+  window.__app = { loadBlob, buildPrint, fill: m => { const g = grid(); m.forEach((row, r) => row.forEach((v, c) => cache.set(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r]), v))); renderResult(); }, state: () => ({ roi, hLines, vLines, cache: [...cache] }), setRoi: r => { roi = r; runAuto(); } };
+})();
+</script>
+<div id="printArea"></div>
+<style id="pageStyle"></style>
+</body>
+</html>
