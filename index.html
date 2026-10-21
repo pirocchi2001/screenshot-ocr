@@ -3,10 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>表OCR → CSV</title>
+<title>画像 → Excel変換</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="lib/JsBarcode.all.min.js"></script>
 <script src="detect.js?v=2"></script>
 <style>
@@ -125,8 +126,8 @@
   <div class="brand">
     <img class="logo" src="logo-toylopark.png" alt="TOYLO PARK" width="177" height="42">
     <div class="ttl">
-      <h1>表OCR → CSV</h1>
-      <div class="sub">スクリーンショットの表を貼り付けるだけ。データはブラウザ内だけで処理されます</div>
+      <h1>画像 → Excel変換</h1>
+      <div class="sub">スクリーンショットを貼り付けるだけで文字認識でデータ化できる！</div>
     </div>
   </div>
   <div class="actions">
@@ -140,14 +141,15 @@
     <button id="btnPaste">クリップボードから貼付</button>
     <input id="file" type="file" accept="image/*" hidden>
     <span class="sep"></span>
-    <button id="btnOcr" class="primary" disabled>OCR実行</button>
+    <button id="btnOcr" disabled>OCR実行</button>
     <button id="btnOcrAll" disabled title="編集内容も含め、すべてのセルを認識し直します">全て再認識</button>
     <span class="sep"></span>
-    <button id="btnCsv" disabled>CSV保存</button>
+    <button id="btnXlsx" class="primary" disabled title="Excelファイル(.xlsx)として保存します">Excel保存</button>
     <button id="btnCopy" disabled title="Excelなどに貼り付け可能(タブ区切り)">コピー</button>
     <button id="btnPdf" disabled title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFになります">PDF出力</button>
     <select id="pdfDir" title="用紙の向き"><option value="portrait">A4 縦</option><option value="landscape">A4 横</option></select>
     <label class="opt"><input type="checkbox" id="optTrim"> 空の行・列を除く</label>
+    <label class="opt"><input type="checkbox" id="optNum" checked> 数字は数値で保存</label>
   </div>
   <div class="row">
     <span class="lbl">仕切り</span>
@@ -402,7 +404,7 @@
   function changed() { renderOverlay(); renderResult(); updateButtons(); }
   function updateButtons() {
     const has = !!roi;
-    for (const id of ['btnOcr', 'btnOcrAll', 'btnCsv', 'btnCopy', 'btnPdf', 'btnAddH', 'btnAddV', 'btnAuto', 'btnClear']) $(id).disabled = !has || (busy && id.startsWith('btnOcr'));
+    for (const id of ['btnOcr', 'btnOcrAll', 'btnXlsx', 'btnCopy', 'btnPdf', 'btnAddH', 'btnAddV', 'btnAuto', 'btnClear']) $(id).disabled = !has || (busy && id.startsWith('btnOcr'));
   }
   function renderAll() { renderOverlay(); renderResult(); updateButtons(); }
 
@@ -611,7 +613,7 @@
   $('btnOcrAll').onclick = () => runOcr(true);
   $('model').onchange = () => msg('精度設定を変更しました。次回のOCRから反映されます。');
 
-  // ---- CSV / コピー ----
+  // ---- Excel / コピー ----
   function matrix() {
     const g = grid(); if (!g) return [];
     let rows = [];
@@ -627,15 +629,61 @@
     }
     return rows;
   }
-  const csvCell = v => /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
-  $('btnCsv').onclick = () => {
-    const csv = '﻿' + matrix().map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
-    const a = document.createElement('a');
-    const d = new Date(), p = n => String(n).padStart(2, '0');
-    a.download = `table_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.csv`;
-    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    msg('CSVを保存しました(UTF-8 BOM付き。Excelでそのまま開けます)。');
+  // ---- Excel(.xlsx)保存 ----
+  const NUM_RE = /^-?(0|[1-9]\d{0,2}(,\d{3})+|[1-9]\d*)(\.\d+)?$/;
+  function cellWidth(v) { return [...v].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 2 : 1), 0); }
+  $('btnXlsx').onclick = async () => {
+    const rows = matrix();
+    if (!rows.length) return;
+    if (!window.ExcelJS) { msg('Excel出力の部品を読み込めませんでした。ネット接続を確認して再読み込みしてください。'); return; }
+    try {
+      const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('表');
+      const nCols = rows[0].length;
+      const widths = Array.from({ length: nCols }, (_, c) => {
+        let m = 6;
+        for (const r of rows) m = Math.max(m, Math.min(60, cellWidth(r[c] || '') + 2), findJan(r[c] || '') ? 26 : 0);
+        return m;
+      });
+      ws.columns = widths.map(w => ({ width: w }));
+      const thin = { style: 'thin', color: { argb: 'FFB0B7C3' } };
+      let nBar = 0;
+      rows.forEach((r, i) => {
+        const row = ws.addRow([]);
+        let tall = false;
+        r.forEach((v, c) => {
+          const cell = row.getCell(c + 1);
+          const jan = findJan(v);
+          // 数値化: 桁区切り/小数を含む数字、またはJAN・先頭0以外の整数
+          const t = v.trim(), digits = t.replace(/,/g, '');
+          const isNum = $('optNum').checked && NUM_RE.test(t) && !jan && digits.replace(/[-.]/g, '').length <= 15 && !(/^0\d/.test(digits) && !digits.includes('.'));
+          if (isNum) { cell.value = Number(digits); if (t.includes(',')) cell.numFmt = '#,##0' + (digits.includes('.') ? '.' + '0'.repeat(digits.split('.')[1].length) : ''); }
+          else cell.value = v;
+          cell.alignment = { vertical: 'top', wrapText: true, horizontal: isNum ? 'right' : 'left' };
+          cell.border = { top: thin, left: thin, bottom: thin, right: thin };
+          if (jan) {
+            const { ok } = janCheck(jan);
+            if (!ok) cell.font = { color: { argb: 'FFD00000' }, bold: true };
+            else {
+              try {
+                const cv = document.createElement('canvas');
+                JsBarcode(cv, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 40, width: 2, margin: 4, displayValue: false, flat: true });
+                const id = wb.addImage({ base64: cv.toDataURL('image/png'), extension: 'png' });
+                ws.addImage(id, { tl: { col: c + 0.04, row: i + 0.48 }, ext: { width: 160, height: 28 } });
+                tall = true; nBar++;
+              } catch (e) { /* 描画不可は無視 */ }
+            }
+          }
+        });
+        if (tall) row.height = 50;
+      });
+      const buf = await wb.xlsx.writeBuffer();
+      const a = document.createElement('a');
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      a.download = `table_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.xlsx`;
+      a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      msg(`Excelファイルを保存しました(${rows.length}行 × ${nCols}列${nBar ? `、バーコード${nBar}個` : ''})。`);
+    } catch (err) { console.error(err); msg('Excel保存に失敗しました: ' + (err.message || err)); }
   };
   $('btnCopy').onclick = async () => {
     const tsv = matrix().map(r => r.map(v => /[\t"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v).join('\t')).join('\n');

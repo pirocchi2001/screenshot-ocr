@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>表OCR → CSV 使い方ガイド</title>
+<title>画像 → Excel変換 使い方ガイド</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -60,7 +60,7 @@
 <header>
   <div class="brand">
     <img src="logo-toylopark.png" alt="TOYLO PARK" width="177" height="42">
-    <div class="t"><h1>表OCR → CSV 使い方ガイド</h1><div class="s">はじめての方向け・手順を画面つきで説明します</div></div>
+    <div class="t"><h1>画像 → Excel変換 使い方ガイド</h1><div class="s">スクリーンショットを貼り付けるだけで文字認識でデータ化できる！(はじめての方向け)</div></div>
   </div>
   <div class="links">
     <a class="btn primary" href="./">アプリを開く</a>
@@ -71,7 +71,7 @@
 <main>
 <section>
   <h2>このアプリでできること</h2>
-  <p>パソコンやスマホの画面で撮った<b>表のスクリーンショット</b>を、そのまま貼り付けるだけで、表の文字を自動で読み取ります(これを「OCR」といいます)。読み取った表は<b>CSVファイル</b>(Excelで開ける形式)や<b>PDF</b>にできます。</p>
+  <p>パソコンやスマホの画面で撮った<b>表のスクリーンショット</b>を、そのまま貼り付けるだけで、表の文字を自動で読み取ります(これを「OCR」といいます)。読み取った表は<b>Excelファイル(.xlsx)</b>や<b>PDF</b>にできます。</p>
   <ul>
     <li>日本語・英字・数字が混ざった表を読み取れます。</li>
     <li>表の線(罫線)がなくても、文字の並びから行と列を自動で区切ります。</li>
@@ -154,14 +154,16 @@
 </section>
 
 <section>
-  <h2><span class="n">6</span>CSVで保存する・Excelに貼り付ける</h2>
+  <h2><span class="n">6</span>Excelで保存する</h2>
+  <p><span class="btnname">Excel保存</span> を押すと、Excelファイル(.xlsx)がダウンロードされます。ダブルクリックすれば、そのままExcelで開けます。</p>
   <ul>
-    <li><span class="btnname">CSV保存</span> … CSVファイルをダウンロードします。Excelでそのまま開けます(文字化けしません)。ただし、Excelは先頭が「0」の数字の0を消すことがあります。</li>
-    <li><span class="btnname">コピー</span> … 表をコピーします。ExcelやGoogleスプレッドシートを開いて、貼り付けるだけです。</li>
-    <li><span class="btnname">空の行・列を除く</span> にチェックを入れると、何も書かれていない行や列を省いて保存します。</li>
+    <li>列の幅は、中身に合わせて自動で整います。表には、罫線が付きます。</li>
+    <li>正しいJANコードの行には、<b>バーコードの画像</b>も入ります。間違っているJANコードは、<span class="red">赤字</span>で保存されます。</li>
+    <li>「数字は数値で保存」にチェックがあると、「1,280」や「98.5」などは、計算できる数値として保存されます。先頭が0の番号(例: 007)、JANコード、型番は、文字のまま保存されます。</li>
+    <li>「空の行・列を除く」にチェックを入れると、何も書かれていない行や列を省きます。</li>
+    <li><span class="btnname">コピー</span> を押すと、表をコピーできます。すでに開いているExcelやGoogleスプレッドシートに、貼り付けるだけです。</li>
   </ul>
-  <div class="tip">CSVには、バーコードの絵や、赤字の情報は入りません。認識した文字だけが保存されます。</div>
-</section>
+  </section>
 
 <section>
   <h2><span class="n">7</span>PDFで保存・印刷する</h2>
@@ -184,7 +186,7 @@
     <tr><td>クリップボードから貼付</td><td>コピーした画像を貼り付けます。(<kbd>Ctrl/⌘</kbd>+<kbd>V</kbd> でも貼り付けられます。)</td></tr>
     <tr><td>OCR実行</td><td>まだ読み取っていないマスを読み取ります。</td></tr>
     <tr><td>全て再認識</td><td>すべてのマスを読み直します。(手で直した内容も消えます。)</td></tr>
-    <tr><td>CSV保存 / コピー</td><td>表をCSVで保存します / 表をコピーします。</td></tr>
+    <tr><td>Excel保存 / コピー</td><td>表をExcelファイル(.xlsx)で保存します / 表をコピーします。</td></tr>
     <tr><td>PDF出力</td><td>A4・1ページ20行のPDFを作ります。</td></tr>
     <tr><td>A4 縦 / A4 横</td><td>PDFの用紙の向きを選びます。</td></tr>
     <tr><td>＋横線 / ＋縦線</td><td>仕切り線を足します。</td></tr>
@@ -214,7 +216,7 @@
   </dl>
 </section>
 
-<footer>© TOYLO PARK 表OCR → CSV</footer>
+<footer>© TOYLO PARK 画像 → Excel変換</footer>
 </main>
 </body>
 </html>
