@@ -36,6 +36,9 @@
   h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: .04em; line-height: 1.4; }
   .sub { font-size: 12px; color: var(--sub); }
   .actions { display: flex; gap: 8px; align-items: center; }
+  a.btn { display: inline-block; font-size: 14px; border-radius: 8px; border: 1px solid var(--line); color: var(--ink); background: var(--panel); padding: 6px 14px; text-decoration: none; transition: border-color .15s, box-shadow .15s; }
+  a.btn:hover { border-color: var(--btn); box-shadow: 0 2px 8px rgba(23,58,92,.18); }
+  a.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   button, select { font: inherit; font-size: 14px; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 14px; cursor: pointer;
     transition: background-color .15s, border-color .15s, box-shadow .15s; }
   button:hover:not(:disabled) { border-color: var(--btn); box-shadow: 0 2px 8px rgba(23,58,92,.18); }
@@ -55,10 +58,6 @@
   #status { display: flex; gap: 12px; align-items: center; min-height: 24px; font-size: 13px; color: var(--sub); border-top: 1px solid var(--line); padding-top: 8px; }
   #bar { flex: 0 0 160px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; visibility: hidden; }
   #bar i { display: block; height: 100%; width: 0; background: var(--btn); }
-  #guide { margin: 12px 16px 0; padding: 14px 18px; font-size: 13.5px; }
-  #guide[hidden] { display: none; }
-  #guide h2 { margin: 0 0 6px; font-size: 15px; }
-  #guide ol { margin: 0; padding-left: 1.4em; }
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 16px; overflow: hidden; }
   .pane { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
   .pane > h2 { margin: 0; padding: 8px 14px; font-size: 14px; font-weight: 700; color: var(--ink); border-bottom: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
@@ -131,19 +130,10 @@
     </div>
   </div>
   <div class="actions">
-    <button id="btnGuide" aria-expanded="false" aria-controls="guide">📖 つかいかた</button>
+    <a class="btn" href="manual.html" target="_blank" rel="noopener">📖 つかいかた</a>
+    <a class="btn" href="manual/screenshot-ocr-manual.pdf" download="表OCR_説明書.pdf" title="初心者向けの説明書(PDF)をダウンロード">説明書PDF</a>
   </div>
 </header>
-<section id="guide" class="card" hidden>
-  <h2>つかいかた</h2>
-  <ol>
-    <li>表のスクリーンショットを <b>Ctrl/⌘+V</b> で貼り付けます(「画像を開く」やドロップも可)。</li>
-    <li>右の原画で、表の範囲をドラッグして指定します。仕切り線が自動で入り、OCRが始まります。</li>
-    <li>線をドラッグして位置を調整できます(ダブルクリックで削除、「＋横線」「＋縦線」で追加)。</li>
-    <li>左の認識結果は、クリックして直接修正できます。JANコードは自動でチェックし、正しければバーコード、誤りなら赤字で表示します。</li>
-    <li>「CSV保存」でCSV、「PDF出力」でA4・1ページ20行のPDFを作ります。</li>
-  </ol>
-</section>
 <section class="card tools">
   <div class="row">
     <button id="btnFile">画像を開く</button>
@@ -728,7 +718,6 @@
   };
   window.addEventListener('afterprint', () => $('printArea').replaceChildren());
 
-  $('btnGuide').onclick = () => { const g = $('guide'); g.hidden = !g.hidden; $('btnGuide').setAttribute('aria-expanded', String(!g.hidden)); };
   window.addEventListener('resize', () => { if (img) setZoom(zoom); });
   // テスト用フック
   window.__app = { loadBlob, buildPrint, fill: m => { const g = grid(); m.forEach((row, r) => row.forEach((v, c) => cache.set(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r]), v))); renderResult(); }, state: () => ({ roi, hLines, vLines, cache: [...cache] }), setRoi: r => { roi = r; runAuto(); } };

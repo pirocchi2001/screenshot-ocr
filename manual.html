@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>表OCR → CSV 使い方ガイド</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#eaf0f6; --panel:#fff; --ink:#14212e; --sub:#5a6b7b; --line:#d3dde7; --btn:#173a5c;
+          --red:#dc4c54; --yellow:#f4d44c; --teal:#54b4bc; --green:#6cac4c; --blue:#4cacdc; --warn:#fff8db; --ok:#23804a; --err:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.8 "Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif; }
+  header { position:relative; background:#fff; padding:10px 24px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; box-shadow:0 2px 12px rgba(20,33,46,.10); }
+  header::after { content:""; position:absolute; left:0; right:0; bottom:0; height:4px;
+    background:linear-gradient(90deg,var(--red) 0 20%,var(--yellow) 20% 40%,var(--teal) 40% 60%,var(--green) 60% 80%,var(--blue) 80% 100%); }
+  .brand { display:flex; align-items:center; gap:18px; }
+  .brand img { height:42px; display:block; }
+  .brand .t { border-left:1px solid var(--line); padding-left:18px; }
+  .brand h1 { margin:0; font-size:17px; line-height:1.4; }
+  .brand .s { font-size:12px; color:var(--sub); }
+  .links { display:flex; gap:8px; flex-wrap:wrap; }
+  a.btn { font-size:14px; border:1px solid var(--line); border-radius:8px; color:var(--ink); text-decoration:none; padding:6px 14px; background:#fff; }
+  a.btn:hover { border-color:var(--btn); }
+  a.btn.primary { background:var(--btn); border-color:var(--btn); color:#fff; font-weight:700; }
+  main { max-width:860px; margin:0 auto; padding:20px 16px 60px; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px 22px; margin:0 0 16px; box-shadow:0 1px 2px rgba(20,33,46,.06),0 6px 18px rgba(20,33,46,.05); break-inside:avoid-page; }
+  h2 { font-size:18px; margin:0 0 10px; display:flex; align-items:center; gap:10px; }
+  h2 .n { background:var(--btn); color:#fff; border-radius:999px; min-width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; font-size:15px; padding:0 8px; }
+  h3 { font-size:15px; margin:14px 0 4px; }
+  p { margin:6px 0; }
+  figure { margin:10px 0; }
+  figure img { width:100%; height:auto; border:1px solid var(--line); border-radius:8px; display:block; }
+  figcaption { font-size:12.5px; color:var(--sub); margin-top:4px; }
+  .tip, .warn { border-radius:8px; padding:8px 14px; margin:10px 0; font-size:14px; }
+  .tip { background:#eaf6ee; border:1px solid #b9dcc5; }
+  .warn { background:var(--warn); border:1px solid #ecd98a; }
+  kbd { background:#f4f7fa; border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:0 6px; font:inherit; font-size:.92em; white-space:nowrap; }
+  .btnname { background:#f4f7fa; border:1px solid var(--line); border-radius:6px; padding:0 7px; font-weight:700; white-space:nowrap; }
+  .red { color:#e11d48; font-weight:700; }
+  .grn { color:var(--ok); font-weight:700; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { border:1px solid var(--line); padding:6px 10px; text-align:left; vertical-align:top; }
+  th { background:#f4f7fa; white-space:nowrap; }
+  ol, ul { margin:6px 0; padding-left:1.4em; }
+  dt { font-weight:700; margin-top:10px; } dd { margin:2px 0 0 0; }
+  footer { text-align:center; color:var(--sub); font-size:12px; margin-top:24px; }
+  @media print {
+    @page { size:A4; margin:14mm 12mm; }
+    body { background:#fff; font-size:10.5pt; line-height:1.7; }
+    header { box-shadow:none; padding:0 0 10px; } .links { display:none; }
+    main { max-width:none; padding:10px 0 0; }
+    section { box-shadow:none; padding:12px 16px; margin-bottom:10px; }
+    figure img { max-height:105mm; width:auto; max-width:100%; margin:0 auto; }
+    .pb { break-before:page; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <img src="logo-toylopark.png" alt="TOYLO PARK" width="177" height="42">
+    <div class="t"><h1>表OCR → CSV 使い方ガイド</h1><div class="s">はじめての方向け・手順を画面つきで説明します</div></div>
+  </div>
+  <div class="links">
+    <a class="btn primary" href="./">アプリを開く</a>
+    <a class="btn" href="manual/screenshot-ocr-manual.pdf" download="表OCR_説明書.pdf">この説明書をPDFで保存</a>
+  </div>
+</header>
+
+<main>
+<section>
+  <h2>このアプリでできること</h2>
+  <p>パソコンやスマホの画面で撮った<b>表のスクリーンショット</b>を、そのまま貼り付けるだけで、表の文字を自動で読み取ります(これを「OCR」といいます)。読み取った表は<b>CSVファイル</b>(Excelで開ける形式)や<b>PDF</b>にできます。</p>
+  <ul>
+    <li>日本語・英字・数字が混ざった表を読み取れます。</li>
+    <li>表の線(罫線)がなくても、文字の並びから行と列を自動で区切ります。</li>
+    <li>区切りの位置は、あとからマウスで動かして直せます。</li>
+    <li><b>JANコード</b>(13桁・8桁のバーコードの数字)が入っていたら、正しい番号かを自動で確認し、正しければバーコードを表示します。</li>
+  </ul>
+  <div class="tip">🔒 <b>安全について:</b> 貼り付けた画像は、ネット上に送信されません。読み取りは、すべてお使いのブラウザの中で行います。(最初だけ、読み取りに必要な日本語データなどをインターネットから取得します。)</div>
+</section>
+
+<section>
+  <h2>はじめる前に</h2>
+  <ul>
+    <li>ブラウザは <b>Google Chrome</b>(パソコン)がおすすめです。</li>
+    <li>インターネットにつないでください。</li>
+    <li><b>初めて読み取るときだけ</b>、日本語データ(十数MB)を取得するため、数十秒〜1分ほどかかることがあります。2回目からは速くなります。</li>
+  </ul>
+</section>
+
+<section>
+  <h2><span class="n">1</span>表のスクリーンショットを貼り付ける</h2>
+  <p>まず、読み取りたい表を画面に出して、スクリーンショットを撮ります。<b>ファイルとして保存せず、クリップボードにコピー</b>すると、そのまま貼り付けられて便利です。</p>
+  <table>
+    <tr><th>Mac</th><td><kbd>⌘</kbd> + <kbd>Control</kbd> + <kbd>Shift</kbd> + <kbd>4</kbd> を押し、表の範囲をドラッグ(クリップボードにコピーされます)</td></tr>
+    <tr><th>Windows</th><td><kbd>Windows</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> を押し、表の範囲をドラッグ</td></tr>
+  </table>
+  <p>次に、このアプリの画面を開いて、<kbd>Ctrl</kbd>(Macは <kbd>⌘</kbd>)+ <kbd>V</kbd> を押します。右側の「原画」に画像が表示されます。</p>
+  <figure><img src="manual/screen1.png" alt="起動直後の画面"><figcaption>▲ 起動直後の画面。左が「認識結果」、右が「原画」です(幅は左右同じです)。</figcaption></figure>
+  <div class="tip">画像ファイルを使う場合は、<span class="btnname">画像を開く</span> を押すか、原画の場所へ画像をドラッグ&ドロップしてください。</div>
+</section>
+
+<section>
+  <h2><span class="n">2</span>表の範囲をドラッグして囲む</h2>
+  <p>右側の原画で、<b>読み取りたい表の範囲を、マウスでドラッグして囲みます</b>。表の全体がぴったり入らなくても大丈夫です。余白は自動で詰められます。</p>
+  <figure><img src="manual/screen2.png" alt="画像を貼り付けた直後"><figcaption>▲ 画像を貼り付けた状態。この上で、表の左上から右下までドラッグします。</figcaption></figure>
+  <p>囲んだ直後に、<b>行と列の仕切り線が自動で入ります</b>。水色の点線が「行の区切り」、赤の点線が「列の区切り」です。左の「認識結果」にも、同じ行数・列数の表ができます。</p>
+  <figure><img src="manual/screen3.png" alt="範囲指定と自動分割"><figcaption>▲ 範囲を囲むと、緑の枠と、仕切り線が表示されます。</figcaption></figure>
+</section>
+
+<section>
+  <h2><span class="n">3</span>仕切り線を直す(必要なときだけ)</h2>
+  <p>自動の区切りが違っていたら、次の方法で直します。</p>
+  <table>
+    <tr><th>線を動かす</th><td>線の上にマウスを置いて、そのままドラッグします。</td></tr>
+    <tr><th>線を消す</th><td>線をダブルクリックします。</td></tr>
+    <tr><th>線を足す</th><td><span class="btnname">＋横線</span> または <span class="btnname">＋縦線</span> を押してから、原画の入れたい位置をクリックします。(やめるときは <kbd>Esc</kbd>)</td></tr>
+    <tr><th>枠の大きさを変える</th><td>緑の枠の四角い取っ手をドラッグします。</td></tr>
+    <tr><th>やり直す</th><td><span class="btnname">自動分割をやり直す</span> で、もう一度自動で区切ります。<span class="btnname">仕切りを消す</span> で、すべての線を消せます。</td></tr>
+  </table>
+  <h3>自動の区切りが合わないとき(スライダー)</h3>
+  <ul>
+    <li><b>行間の最小幅:</b> 小さくすると、行が細かく分かれます。大きくすると、分かれにくくなります。</li>
+    <li><b>列間の最小幅:</b> 小さくすると、列が細かく分かれます。文字の間で列が割れてしまうときは、大きくします。</li>
+  </ul>
+  <p>スライダーを動かすと、自動で区切り直されます。</p>
+  <div class="tip">原画が小さい・大きいときは、右上の <span class="btnname">−</span> <span class="btnname">＋</span> で拡大・縮小できます。<span class="btnname">100%</span> は等倍、<span class="btnname">全体</span> は画面の幅にぴったり合わせます。</div>
+</section>
+
+<section>
+  <h2><span class="n">4</span>文字を読み取って、結果を確認する</h2>
+  <p>「枠指定後に自動OCR」にチェックが入っていれば、範囲を囲むと<b>自動で読み取りが始まります</b>(チェックを外した場合は <span class="btnname">OCR実行</span> を押します)。画面上部に進み具合が出ます。</p>
+  <figure><img src="manual/screen4.png" alt="認識結果の画面"><figcaption>▲ 読み取り後。左に認識した内容、右に原画が表示されます。</figcaption></figure>
+  <ul>
+    <li>読み間違いは、<b>左の表のマス目をクリックして、そのまま書き直せます</b>。</li>
+    <li>左のマスにカーソルを置くと、原画の対応する場所が青く光ります。見比べながら直せます。</li>
+    <li>仕切り線を動かしたあと、黄色いマスは「まだ読み取っていない」マスです。<span class="btnname">OCR実行</span> で、黄色いマスだけ読み取ります。</li>
+    <li><span class="btnname">全て再認識</span> は、すべてのマスを読み直します。手で直した内容も上書きされるので注意してください。</li>
+  </ul>
+  <div class="warn">⚠️ OCRは100%正確ではありません。「O(オー)と0(ゼロ)」「,(カンマ)と.(ピリオド)」「1とl」などの読み間違いが起きやすいので、<b>大事な数字は必ず原画と見比べて</b>ください。</div>
+</section>
+
+<section>
+  <h2><span class="n">5</span>JANコードの確認とバーコード</h2>
+  <p>マスの中に13桁(または8桁)のJANコードがあると、自動で<b>チェックデジット</b>(末尾の検算用の数字)を計算して、正しいかを確認します。</p>
+  <table>
+    <tr><th><span class="grn">正しいとき</span></th><td>マスの中にバーコードと「✓ チェックデジットOK」が表示されます。</td></tr>
+    <tr><th><span class="red">間違っているとき</span></th><td>番号が<span class="red">赤字</span>になり、「✗ チェックデジット不一致(末尾は ○ のはず)」と表示されます。読み間違いか、元の番号の誤りです。原画と見比べて直してください。</td></tr>
+  </table>
+  <p>番号を直すと、その場でもう一度確認されます。正しくなれば赤字が消えて、バーコードが出ます。</p>
+  <div class="tip">13桁の数字は、電話番号や管理番号でもJANコードとして確認されます。その場合の赤字は、無視してかまいません。</div>
+</section>
+
+<section>
+  <h2><span class="n">6</span>CSVで保存する・Excelに貼り付ける</h2>
+  <ul>
+    <li><span class="btnname">CSV保存</span> … CSVファイルをダウンロードします。Excelでそのまま開けます(文字化けしません)。ただし、Excelは先頭が「0」の数字の0を消すことがあります。</li>
+    <li><span class="btnname">コピー</span> … 表をコピーします。ExcelやGoogleスプレッドシートを開いて、貼り付けるだけです。</li>
+    <li><span class="btnname">空の行・列を除く</span> にチェックを入れると、何も書かれていない行や列を省いて保存します。</li>
+  </ul>
+  <div class="tip">CSVには、バーコードの絵や、赤字の情報は入りません。認識した文字だけが保存されます。</div>
+</section>
+
+<section>
+  <h2><span class="n">7</span>PDFで保存・印刷する</h2>
+  <p><span class="btnname">PDF出力</span> を押すと、印刷の画面が開きます。<b>A4用紙に、1ページ20行ずつ</b>並べます。21行目からは、次のページになります。</p>
+  <ol>
+    <li>横の <span class="btnname">A4 縦</span> / <span class="btnname">A4 横</span> で、用紙の向きを選びます。</li>
+    <li><span class="btnname">PDF出力</span> を押します。</li>
+    <li>印刷の画面で、<b>送信先を「PDFに保存」</b>にして保存します。紙に印刷する場合は、プリンターを選びます。</li>
+    <li>設定の「<b>倍率</b>」は<b>100%(または「デフォルト」)</b>、「<b>余白</b>」は<b>デフォルト</b>にします。(倍率を変えると、1ページ20行にならないことがあります。)</li>
+  </ol>
+  <p>正しいJANコードの行には、番号のとなりにバーコードが付きます。間違っているコードは赤字になります。</p>
+  <figure><img src="manual/screen6.png" alt="PDFの例" style="max-width:62%;margin:0 auto"><figcaption>▲ PDFの例(A4縦・1ページ目)。</figcaption></figure>
+</section>
+
+<section>
+  <h2>ボタンの一覧</h2>
+  <table>
+    <tr><th>ボタン</th><th>はたらき</th></tr>
+    <tr><td>画像を開く</td><td>パソコンの中の画像ファイルを読み込みます。</td></tr>
+    <tr><td>クリップボードから貼付</td><td>コピーした画像を貼り付けます。(<kbd>Ctrl/⌘</kbd>+<kbd>V</kbd> でも貼り付けられます。)</td></tr>
+    <tr><td>OCR実行</td><td>まだ読み取っていないマスを読み取ります。</td></tr>
+    <tr><td>全て再認識</td><td>すべてのマスを読み直します。(手で直した内容も消えます。)</td></tr>
+    <tr><td>CSV保存 / コピー</td><td>表をCSVで保存します / 表をコピーします。</td></tr>
+    <tr><td>PDF出力</td><td>A4・1ページ20行のPDFを作ります。</td></tr>
+    <tr><td>A4 縦 / A4 横</td><td>PDFの用紙の向きを選びます。</td></tr>
+    <tr><td>＋横線 / ＋縦線</td><td>仕切り線を足します。</td></tr>
+    <tr><td>自動分割をやり直す</td><td>仕切り線を、自動でもう一度入れ直します。</td></tr>
+    <tr><td>仕切りを消す</td><td>すべての仕切り線を消します。</td></tr>
+    <tr><td>精度</td><td>「高精度」は時間がかかりますが、読み間違いが少なくなります。「標準」は速いですが、精度は下がります。</td></tr>
+  </table>
+</section>
+
+<section>
+  <h2>こんなときは</h2>
+  <dl>
+    <dt>画像を貼り付けても何も起きません</dt>
+    <dd>画面のどこかをクリックしてから、もう一度 <kbd>Ctrl/⌘</kbd>+<kbd>V</kbd> を押してください。それでもだめなら、<span class="btnname">画像を開く</span> からファイルを選んでください。</dd>
+    <dt>読み取りが始まらない・とても遅い</dt>
+    <dd>初回は日本語データの取得に時間がかかります。進み具合の表示が出ていれば、そのままお待ちください。インターネットにつながっているかも確認してください。</dd>
+    <dt>1つのマスに、本当は別々の文字が入ってしまう</dt>
+    <dd>列の線が足りていません。<span class="btnname">＋縦線</span> で線を足すか、「列間の最小幅」を小さくしてください。</dd>
+    <dt>本当は1つのマスなのに、途中で割れている</dt>
+    <dd>線をダブルクリックして消すか、「列間の最小幅」「行間の最小幅」を大きくしてください。</dd>
+    <dt>小さい文字や、薄い文字が読めない</dt>
+    <dd>元の画面を拡大してから、スクリーンショットを撮り直してください。大きく写すほど、よく読み取れます。「精度」は「高精度」にします。</dd>
+    <dt>「ボタンが押せない(灰色)」</dt>
+    <dd>先に、表の範囲をドラッグして囲んでください。囲むと、使えるようになります。</dd>
+    <dt>PDFが1ページ20行にならない</dt>
+    <dd>印刷画面の「倍率」を100%にして、「余白」をデフォルトにしてください。</dd>
+  </dl>
+</section>
+
+<footer>© TOYLO PARK 表OCR → CSV</footer>
+</main>
+</body>
+</html>
