@@ -115,6 +115,13 @@
   #result th.ch:hover .x { opacity: 1; }
   #result th.ch .x:hover { color: #fff; background: var(--err); }
   @media (hover: none) { #result th.ch .x { opacity: 1; } }
+  #result th.ch:not(.off) { cursor: grab; }
+  #result th.ch .grip { display: inline-block; margin-right: 4px; color: var(--sub); opacity: .55; font-size: 12px; touch-action: none; cursor: grab; }
+  #result th.ch:hover .grip { opacity: 1; }
+  #result th.ch.dragging { opacity: .45; }
+  #result th.drop-before { box-shadow: inset 4px 0 0 var(--hi); }
+  #result th.drop-after { box-shadow: inset -4px 0 0 var(--hi); }
+  body.col-dragging, body.col-dragging * { cursor: grabbing !important; user-select: none; }
   #result th.ch.off { cursor: pointer; }
   #result th.ch.off:hover { color: var(--ink); background: #dfe7ef; }
   #result th.ch.off, #result td.c.off { min-width: 0; width: 30px; max-width: 30px; padding: 0; overflow: hidden; }
@@ -684,7 +691,7 @@
     srcCanvas = canvas; srcCtx = canvas.getContext('2d', { willReadFrequently: true });
     natW = canvas.width; natH = canvas.height;
     const b = await new Promise(r => canvas.toBlob(r, 'image/png'));
-    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear();
+    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear(); colOrder = [];
     buildStage(URL.createObjectURL(b));
     fitZoom(); renderAll();
   }
@@ -762,7 +769,7 @@
         const b = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
         URL.revokeObjectURL(url); url = URL.createObjectURL(b);
       }
-      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear();
+      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear(); colOrder = [];
       buildStage(url);
       fitZoom();
       renderAll();
@@ -1059,6 +1066,12 @@
 
   // 認識結果の列の表示/非表示(非表示の列は、Excel・PDF・コピーにも含めない)
   let hiddenCols = new Set(), hiddenN = 0;
+  let colOrder = [];   // 列の並び(元の列番号の並べ替え)。画面・Excel・PDF・コピーの順番になる
+  const isReordered = () => colOrder.some((c, i) => c !== i);
+  // 列の数が変わったら、消した列・並びの指定は解除する
+  function syncCols(n) {
+    if (hiddenN !== n || colOrder.length !== n) { hiddenCols.clear(); colOrder = Array.from({ length: n }, (_, i) => i); hiddenN = n; }
+  }
   function toggleCol(c, n) {
     if (hiddenCols.has(c)) hiddenCols.delete(c);
     else {
@@ -1066,8 +1079,59 @@
       hiddenCols.add(c);
     }
     hiddenN = n; renderResult();
-    msg(hiddenCols.has(c) ? `${c + 1}列目を消しました(Excel・PDF・コピーにも含めません)。斜線の列の「＋」か、左上の「全部戻す」で戻せます。` : `${c + 1}列目を戻しました。`);
+    const pos = colOrder.indexOf(c) + 1;
+    msg(hiddenCols.has(c) ? `${pos}列目を消しました(Excel・PDF・コピーにも含めません)。斜線の列の「＋」か、左上の「全部戻す」で戻せます。` : `${pos}列目を戻しました。`);
   }
+  // ---- 列見出しのドラッグで、列の並びを変える ----
+  let cd = null;
+  function startColDrag(e, c, d, th) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('.x')) return;
+    cd = { c, d, x: e.clientX, y: e.clientY, cx: e.clientX, active: false, over: null, side: 'before', th, scroller: null };
+  }
+  function colDragUpdate() {
+    if (!cd || !cd.active) return;
+    document.querySelectorAll('#result th.drop-before, #result th.drop-after').forEach(t => t.classList.remove('drop-before', 'drop-after'));
+    const h = document.elementsFromPoint(cd.cx, cd.cy).find(n => n.matches && n.matches('#result th.ch'));
+    if (!h) { cd.over = null; return; }
+    const r = h.getBoundingClientRect();
+    cd.over = h; cd.side = cd.cx < r.left + r.width / 2 ? 'before' : 'after';
+    h.classList.add('drop-' + cd.side);
+  }
+  function endColDrag(cancel) {
+    const st = cd; if (!st) return;
+    cd = null;
+    clearInterval(st.scroller);
+    if (!st.active) return;
+    document.body.classList.remove('col-dragging');
+    st.th.classList.remove('dragging');
+    document.querySelectorAll('#result th.drop-before, #result th.drop-after').forEach(t => t.classList.remove('drop-before', 'drop-after'));
+    if (cancel || !st.over) return;
+    let ins = +st.over.dataset.d + (st.side === 'after' ? 1 : 0);
+    if (ins > st.d) ins--;
+    if (ins === st.d) return;
+    colOrder.splice(st.d, 1); colOrder.splice(ins, 0, st.c);
+    renderResult();
+    msg(`列を ${st.d + 1} 番目から ${ins + 1} 番目へ移しました(Excel・PDF・コピーの順番にも反映されます)。左上の「並びを戻す」で元に戻せます。`);
+  }
+  window.addEventListener('pointermove', e => {
+    if (!cd) return;
+    cd.cx = e.clientX; cd.cy = e.clientY;
+    if (!cd.active) {
+      if (Math.hypot(e.clientX - cd.x, e.clientY - cd.y) < 6) return;
+      cd.active = true; cd.th.classList.add('dragging'); document.body.classList.add('col-dragging');
+      // 端に近づいたら、表を横にスクロール
+      cd.scroller = setInterval(() => {
+        const w = $('resultWrap').getBoundingClientRect();
+        if (cd.cx < w.left + 40) $('resultWrap').scrollLeft -= 14; else if (cd.cx > w.right - 40) $('resultWrap').scrollLeft += 14;
+        colDragUpdate();
+      }, 16);
+    }
+    colDragUpdate();
+  });
+  window.addEventListener('pointerup', () => endColDrag(false));
+  window.addEventListener('pointercancel', () => endColDrag(true));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') endColDrag(true); });
   function renderResult() {
     const wrap = $('resultWrap');
     const g = grid();
@@ -1076,19 +1140,20 @@
       : '<div class="empty">認識した結果の表が、ここに出ます。<br><span class="hint">まず右の原画に、画像を入れてください。</span></div>';
     $('dims').textContent = ''; return; }
     const { xs, ys } = g;
-    if (hiddenN !== xs.length - 1) hiddenCols.clear();   // 列の数が変わったら、非表示の指定は解除
-    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列` + (hiddenCols.size ? `(${hiddenCols.size}列を消去中)` : '');
+    syncCols(xs.length - 1);   // 列の数が変わったら、消した列・並びの指定は解除
+    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列` + (hiddenCols.size ? `(${hiddenCols.size}列を消去中)` : '') + (isReordered() ? '(並べ替え済み)' : '');
     const tbl = document.createElement('table'); tbl.id = 'result';
     const head = tbl.createTHead().insertRow();
     const thRn = document.createElement('th'); thRn.className = 'rn'; head.append(thRn);
-    if (hiddenCols.size) {
-      thRn.classList.add('all'); thRn.textContent = '全部戻す'; thRn.title = '消した列をすべて戻します';
-      thRn.onclick = () => { hiddenCols.clear(); renderResult(); msg('消した列をすべて戻しました。'); };
+    if (hiddenCols.size || isReordered()) {
+      thRn.classList.add('all'); thRn.textContent = hiddenCols.size ? '全部戻す' : '並びを戻す';
+      thRn.title = hiddenCols.size ? '消した列と、列の並びを、すべて元に戻します' : '列の並びを元に戻します';
+      thRn.onclick = () => { hiddenCols.clear(); colOrder = Array.from({ length: xs.length - 1 }, (_, i) => i); renderResult(); msg('消した列と列の並びを、元に戻しました。'); };
     }
     // バーコード専用の列を挿入する位置(Excel・PDFと同じ数え方: 非表示の列・空の列(「空の行・列を除く」)は数えない)
     const nC = xs.length - 1;
     const vis = [];
-    for (let c = 0; c < nC; c++) {
+    for (const c of colOrder) {
       if (hiddenCols.has(c)) continue;
       if ($('optTrim').checked) {
         let any = false;
@@ -1100,18 +1165,22 @@
     const bk = bcInsertIndex(vis.length);
     const bcBefore = bk === null ? -1 : (bk < vis.length ? vis[bk] : nC);   // この列の手前に挿入(nC なら末尾)
     const addBcHead = () => { const th = document.createElement('th'); th.className = 'bch'; th.textContent = '🏷 バーコード'; th.title = 'Excel・PDFで、この位置にバーコードの列が入ります'; head.append(th); };
-    for (let c = 0; c < xs.length - 1; c++) {
+    for (let d = 0; d < nC; d++) {
+      const c = colOrder[d];
       if (c === bcBefore) addBcHead();
-      const th = document.createElement('th'), off = hiddenCols.has(c); th.className = 'ch' + (off ? ' off' : '');
+      const th = document.createElement('th'), off = hiddenCols.has(c); th.className = 'ch' + (off ? ' off' : ''); th.dataset.d = d;
       if (off) {
-        th.textContent = '＋'; th.title = `${c + 1}列目を戻す`;
-        th.onclick = () => toggleCol(c, xs.length - 1);
+        th.textContent = '＋'; th.title = `${d + 1}列目を戻す`;
+        th.onclick = () => toggleCol(c, nC);
       } else {
-        const no = document.createElement('span'); no.textContent = String(c + 1);
+        const grip = document.createElement('span'); grip.className = 'grip'; grip.textContent = '⠿'; grip.title = 'ドラッグして、列の順番を入れ替えます';
+        const no = document.createElement('span'); no.textContent = String(d + 1);
         const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.textContent = '✕';
-        x.title = `${c + 1}列目を消す(Excel・PDF・コピーにも含めません。あとで戻せます)`; x.setAttribute('aria-label', `${c + 1}列目を消す`);
-        x.onclick = e => { e.stopPropagation(); toggleCol(c, xs.length - 1); };
-        th.append(no, x);
+        x.title = `${d + 1}列目を消す(Excel・PDF・コピーにも含めません。あとで戻せます)`; x.setAttribute('aria-label', `${d + 1}列目を消す`);
+        x.onclick = e => { e.stopPropagation(); toggleCol(c, nC); };
+        th.append(grip, no, x);
+        // マウスは見出しのどこでも、タッチは「⠿」から、ドラッグで並べ替え
+        th.addEventListener('pointerdown', e => { if (e.pointerType !== 'mouse' && !e.target.closest('.grip')) return; startColDrag(e, c, d, th); });
       }
       head.append(th);
     }
@@ -1120,7 +1189,8 @@
     for (let r = 0; r < ys.length - 1; r++) {
       const tr = body.insertRow();
       const rn = tr.insertCell(); rn.className = 'rn'; rn.textContent = r + 1;
-      for (let c = 0; c < xs.length - 1; c++) {
+      for (let d = 0; d < nC; d++) {
+        const c = colOrder[d];
         if (c === bcBefore) { const b = tr.insertCell(); b.className = 'bcc'; }
         const rect = { x: xs[c], y: ys[r], w: xs[c + 1] - xs[c], h: ys[r + 1] - ys[r] };
         const key = keyOf(rect.x, rect.y, rect.w, rect.h);
@@ -1477,7 +1547,8 @@
       for (let c = 0; c < g.xs.length - 1; c++) row.push(cache.get(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r])) || '');
       rows.push(row);
     }
-    if (hiddenCols.size) rows = rows.map(r => r.filter((_, c) => !hiddenCols.has(c)));
+    syncCols(g.xs.length - 1);
+    if (hiddenCols.size || isReordered()) rows = rows.map(r => colOrder.filter(c => !hiddenCols.has(c)).map(c => r[c]));
     if ($('optTrim').checked) {
       rows = rows.filter(r => r.some(v => v.trim()));
       const keep = (rows[0] || []).map((_, c) => rows.some(r => r[c].trim()));
