@@ -244,6 +244,36 @@
     main .pane:nth-child(2) { order: -1; min-height: 88vh; }   /* スマホでは、原画を先に */
     .help { display: none; }
   }
+
+  /* 枠を濃く、機能ごとに色分けして見やすくする */
+  :root { --line: #8fa3b8; --c1: #2563eb; --c2: #16a34a; --c3: #ea7a0c; --c4: #7c3aed; }
+  @media (prefers-color-scheme: dark) { :root { --line: #5d7690; --c1: #60a5fa; --c2: #4ade80; --c3: #fb923c; --c4: #a78bfa; } }
+  button, select, a.btn, input.num { border-width: 1.5px; border-color: #5f7790; }
+  @media (prefers-color-scheme: dark) { button, select, a.btn, input.num { border-color: #7d96b0; } }
+  .card, .pane { border-width: 2px; }
+  .tools { border-color: #4b6785; }
+  .step { border-top-width: 5px; border-top-color: var(--sc); border-left: 2px solid var(--line); background: color-mix(in srgb, var(--sc) 6%, transparent); }
+  .step:first-child { border-left: 0; }
+  .step[data-step="1"] { --sc: var(--c1); } .step[data-step="2"] { --sc: var(--c2); }
+  .step[data-step="3"] { --sc: var(--c3); } .step[data-step="4"] { --sc: var(--c4); }
+  .step .sh i { border-color: var(--sc); color: var(--sc); border-width: 2px; }
+  .step.cur { background: color-mix(in srgb, var(--sc) 16%, transparent); box-shadow: inset 0 0 0 2px var(--sc); }
+  .step.cur .sh i { background: var(--sc); border-color: var(--sc); color: #fff; }
+  .step .sb button { border-color: var(--sc); }
+  .step .sb button.primary, .step .sb button[aria-pressed=true] { background: var(--sc); border-color: var(--sc); color: #fff; }
+  .seg button[aria-pressed=true] { background: var(--sc, var(--btn)); border-color: var(--sc, var(--btn)); color: #fff; }
+  main .pane:nth-child(1) { border-color: var(--c2); }
+  main .pane:nth-child(1) > h2 { border-bottom: 2px solid var(--c2); background: color-mix(in srgb, var(--c2) 12%, var(--panel)); }
+  main .pane:nth-child(2) { border-color: var(--c1); }
+  main .pane:nth-child(2) > h2 { border-bottom: 2px solid var(--c1); background: color-mix(in srgb, var(--c1) 12%, var(--panel)); }
+  .adv { border-top: 2px solid var(--line); }
+  #status { border-top: 2px solid var(--line); }
+  #result th, #result td.rn, #result td.c, #result td.bcc { border-color: #7b90a6; }
+  #result td.bcc { background: color-mix(in srgb, var(--c3) 12%, var(--panel)); }
+  .roi { border: 3px solid var(--roi); background: rgba(22,163,74,.08); }
+  .ln.h::after { border-top-width: 3px; } .ln.v::after { border-left-width: 3px; }
+  .drop { border: 3px dashed var(--c1); }
+  .touchbar { border-bottom: 2px solid var(--c1); }
 </style>
 </head>
 <body>
