@@ -766,7 +766,7 @@
   }
   const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚❶❷❸❹❺❻❼❽❾❿⓪⓿';
   async function getWorker() {
-    const model = $('model').value;
+    const model = $('model').value === 'fast' ? 'fast' : 'best';
     if (worker && workerModel === model) return worker;
     if (worker) { await worker.terminate(); worker = null; }
     msg('OCRエンジンを準備中… (初回は日本語データのダウンロードに時間がかかります)');
@@ -786,6 +786,52 @@
     $('bar').firstElementChild.style.width = Math.round((p || 0) * 100) + '%';
   }
 
+  // ---- Mac の文字認識(Vision): Corkboard Share 経由。画像はそのMacの外へ出ない ----
+  let visionOK = false, visionSeq = 0;
+  const visionWait = new Map();
+  function enableVision() {
+    if (visionOK) return;
+    visionOK = true;
+    const o = document.createElement('option');
+    o.value = 'vision'; o.textContent = 'Macの文字認識(最高精度・Corkboard経由)';
+    $('model').prepend(o); $('model').value = 'vision';
+  }
+  window.addEventListener('message', e => {
+    if (e.origin !== CORK_ORIGIN || !window.opener || e.source !== window.opener) return;
+    const d = e.data;
+    if (!d || (d.type !== 'ocr-result' && d.type !== 'ocr-pong') || !visionWait.has(d.id)) return;
+    const w = visionWait.get(d.id); visionWait.delete(d.id); clearTimeout(w.timer);
+    if (d.type === 'ocr-pong') w.resolve(!!d.ok);
+    else if (Array.isArray(d.texts)) w.resolve(d.texts); else w.reject(new Error(d.error || '失敗'));
+  });
+  // 使えるか確認する。Macがスリープ中・Corkboardのタブが閉じられている・応答がない場合は false
+  function visionPing() {
+    if (!window.opener || window.opener.closed) return Promise.resolve(false);
+    const id = ++visionSeq;
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { visionWait.delete(id); resolve(false); }, 7000);
+      visionWait.set(id, { resolve, reject: () => resolve(false), timer });
+      try { window.opener.postMessage({ type: 'ocr-ping', id }, CORK_ORIGIN); }
+      catch (err) { visionWait.delete(id); clearTimeout(timer); resolve(false); }
+    });
+  }
+  // 画像(キャンバス)の配列を送り、同じ順の認識結果(文字列の配列)を受け取る
+  async function visionRecognize(canvases) {
+    if (!window.opener || window.opener.closed) throw new Error('Corkboard Share のタブが閉じられています');
+    const blobs = await Promise.all(canvases.map(c => new Promise(r => c.toBlob(r, 'image/png'))));
+    const id = ++visionSeq;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { visionWait.delete(id); reject(new Error('応答がありません')); }, 70000);
+      visionWait.set(id, { resolve, reject, timer });
+      try { window.opener.postMessage({ type: 'ocr-request', id, images: blobs }, CORK_ORIGIN); }
+      catch (err) { visionWait.delete(id); clearTimeout(timer); reject(err); }
+    });
+  }
+  // Vision の結果の整え方: 数字や英字のそばの全角コロンは半角に
+  function cleanVision(t) {
+    return cleanText(t).replace(/：(?=\s*[0-9A-Za-z])|(?<=[0-9A-Za-z])：/g, ':');
+  }
+
   async function runOcr(all) {
     if (!roi || busy) return;
     busy = true; updateButtons();
@@ -799,7 +845,42 @@
       }
       if (!todo.length) { msg('認識していないセルはありません。'); return; }
       const roiAtStart = roi;
-      for (let i = 0; i < todo.length; i++) {
+      let start = 0;
+      let useVision = visionOK && $('model').value === 'vision';
+      let via = '';
+      if (useVision) {
+        msg('Macの文字認識に接続しています…');
+        if (!(await visionPing())) {
+          useVision = false; via = '(Macの文字認識に接続できなかったため、Tesseract.jsで認識) ';
+          msg('Macの文字認識に接続できません(Macがスリープ中など)。内蔵のTesseract.jsで認識します。');
+        }
+      }
+      if (useVision) {
+        // まとめて送って認識する(失敗したら、残りは内蔵の認識に切り替える)
+        const CH = 40;
+        try {
+          for (; start < todo.length; start += CH) {
+            const part = todo.slice(start, start + CH);
+            setBar(start / todo.length); msg(`Macの文字認識で認識中… ${Math.min(start + CH, todo.length)} / ${todo.length} セル`);
+            const preps = part.map(t => prepCell(t.rect));
+            const sent = preps.filter(Boolean).map(p => p.canvas);
+            const texts = sent.length ? await visionRecognize(sent) : [];
+            let k = 0;
+            part.forEach((t, j) => {
+              const text = preps[j] ? cleanVision(texts[k++] || '') : '';
+              cache.set(t.key, text);
+              const td = document.querySelector(`#result td.c[data-key="${t.key}"]`);
+              if (td) { setCell(td, text); td.classList.remove('stale'); }
+            });
+            if (roi !== roiAtStart && !roi) break;
+          }
+          start = todo.length;
+        } catch (err) {
+          console.error(err); via = '(Macの文字認識が途中で使えなくなったため、残りはTesseract.jsで認識) ';
+          msg('Macの文字認識が途中で使えなくなりました(' + (err.message || err) + ')。残りを内蔵のTesseract.jsで認識します。');
+        }
+      }
+      for (let i = start; i < todo.length; i++) {
         setBar(i / todo.length); msg(`認識中… ${i + 1} / ${todo.length} セル`);
         const { rect, key } = todo[i];
         const p = prepCell(rect);
@@ -813,7 +894,7 @@
         if (td) { setCell(td, text); td.classList.remove('stale'); }
         if (roi !== roiAtStart && !roi) break;
       }
-      msg(`完了: ${todo.length} セルを認識しました。誤りは左の表で直接修正できます。`);
+      msg(`完了: ${todo.length} セルを認識しました。${via}誤りは左の表で直接修正できます。`);
     } catch (err) {
       console.error(err); msg('OCRに失敗しました: ' + (err.message || err));
     } finally {
@@ -983,6 +1064,7 @@
     if (e.origin !== CORK_ORIGIN || !window.opener || e.source !== window.opener) return;
     const d = e.data;
     if (d && d.type === 'ocr-image' && d.blob instanceof Blob && /^image\//.test(d.blob.type) && d.blob.size <= 50e6) {
+      if (d.vision) enableVision();
       msg('Corkboard Share から画像を受け取りました。');
       loadBlob(d.blob, { tone: true, orient: true, deskew: true });
     }
