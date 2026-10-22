@@ -110,12 +110,22 @@
   #result td.c .bc .ok { color: #16a34a; font-size: 11px; }
   #result td.c .bc .ng { color: #e11d48; font-size: 11px; }
   #result td.c.stale { background: var(--warn); }
-  #result th.ch { cursor: pointer; user-select: none; }
-  #result th.ch:hover { color: var(--ink); background: #dfe7ef; }
+  #result th.ch { user-select: none; white-space: nowrap; }
+  #result th.ch .x { margin-left: 6px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--sub); font-size: 11px; line-height: 1.5; opacity: .45; box-shadow: none; cursor: pointer; }
+  #result th.ch:hover .x { opacity: 1; }
+  #result th.ch .x:hover { color: #fff; background: var(--err); }
+  @media (hover: none) { #result th.ch .x { opacity: 1; } }
+  #result th.ch.off { cursor: pointer; }
+  #result th.ch.off:hover { color: var(--ink); background: #dfe7ef; }
   #result th.ch.off, #result td.c.off { min-width: 0; width: 30px; max-width: 30px; padding: 0; overflow: hidden; }
-  #result th.ch.off { opacity: .6; text-decoration: line-through; }
+  #result th.ch.off { opacity: .8; }
   #result td.c.off > * { display: none; }
   #result td.c.off { background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 4px, transparent 4px, transparent 8px); }
+  /* バーコード専用の列(Excel・PDFで挿入される列の見本) */
+  #result th.bch { background: color-mix(in srgb, var(--hi) 22%, var(--bg)); color: var(--ink); font-weight: 700; min-width: 150px; }
+  #result td.bcc { background: color-mix(in srgb, var(--hi) 7%, var(--panel)); border: 1px solid var(--line); padding: 3px 7px; text-align: center; vertical-align: middle; user-select: none; }
+  #result td.bcc svg { display: block; margin: 0 auto; max-width: 100%; height: auto; background: #fff; }
+  #result td.bcc .none { color: var(--sub); font-size: 11px; }
   #result th.rn.all { cursor: pointer; color: var(--ink); text-decoration: underline; }
   /* 原画 */
   #stage { position: relative; display: inline-block; user-select: none; -webkit-user-select: none; }
@@ -1052,11 +1062,11 @@
   function toggleCol(c, n) {
     if (hiddenCols.has(c)) hiddenCols.delete(c);
     else {
-      if (hiddenCols.size + 1 >= n) { msg('すべての列を非表示にはできません。'); return; }
+      if (hiddenCols.size + 1 >= n) { msg('すべての列は消せません。最後の1列は残ります。'); return; }
       hiddenCols.add(c);
     }
     hiddenN = n; renderResult();
-    msg(hiddenCols.has(c) ? `${c + 1}列目を非表示にしました(Excel・PDF・コピーにも含めません)。見出しをクリックで再表示。` : `${c + 1}列目を表示しました。`);
+    msg(hiddenCols.has(c) ? `${c + 1}列目を消しました(Excel・PDF・コピーにも含めません)。斜線の列の「＋」か、左上の「全部戻す」で戻せます。` : `${c + 1}列目を戻しました。`);
   }
   function renderResult() {
     const wrap = $('resultWrap');
@@ -1067,25 +1077,51 @@
     $('dims').textContent = ''; return; }
     const { xs, ys } = g;
     if (hiddenN !== xs.length - 1) hiddenCols.clear();   // 列の数が変わったら、非表示の指定は解除
-    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列` + (hiddenCols.size ? `(非表示 ${hiddenCols.size}列)` : '');
+    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列` + (hiddenCols.size ? `(${hiddenCols.size}列を消去中)` : '');
     const tbl = document.createElement('table'); tbl.id = 'result';
     const head = tbl.createTHead().insertRow();
     const thRn = document.createElement('th'); thRn.className = 'rn'; head.append(thRn);
     if (hiddenCols.size) {
-      thRn.classList.add('all'); thRn.textContent = '全表示'; thRn.title = '非表示の列をすべて表示します';
-      thRn.onclick = () => { hiddenCols.clear(); renderResult(); msg('すべての列を表示しました。'); };
+      thRn.classList.add('all'); thRn.textContent = '全部戻す'; thRn.title = '消した列をすべて戻します';
+      thRn.onclick = () => { hiddenCols.clear(); renderResult(); msg('消した列をすべて戻しました。'); };
     }
+    // バーコード専用の列を挿入する位置(Excel・PDFと同じ数え方: 非表示の列・空の列(「空の行・列を除く」)は数えない)
+    const nC = xs.length - 1;
+    const vis = [];
+    for (let c = 0; c < nC; c++) {
+      if (hiddenCols.has(c)) continue;
+      if ($('optTrim').checked) {
+        let any = false;
+        for (let r = 0; r < ys.length - 1; r++) { const v = cache.get(keyOf(xs[c], ys[r], xs[c + 1] - xs[c], ys[r + 1] - ys[r])); if (v && v.trim()) { any = true; break; } }
+        if (!any) continue;
+      }
+      vis.push(c);
+    }
+    const bk = bcInsertIndex(vis.length);
+    const bcBefore = bk === null ? -1 : (bk < vis.length ? vis[bk] : nC);   // この列の手前に挿入(nC なら末尾)
+    const addBcHead = () => { const th = document.createElement('th'); th.className = 'bch'; th.textContent = '🏷 バーコード'; th.title = 'Excel・PDFで、この位置にバーコードの列が入ります'; head.append(th); };
     for (let c = 0; c < xs.length - 1; c++) {
-      const th = document.createElement('th'); th.className = 'ch' + (hiddenCols.has(c) ? ' off' : '');
-      th.textContent = String(c + 1); th.title = hiddenCols.has(c) ? 'クリックで表示' : 'クリックで非表示(Excel・PDF・コピーにも含めません)';
-      th.onclick = () => toggleCol(c, xs.length - 1);
+      if (c === bcBefore) addBcHead();
+      const th = document.createElement('th'), off = hiddenCols.has(c); th.className = 'ch' + (off ? ' off' : '');
+      if (off) {
+        th.textContent = '＋'; th.title = `${c + 1}列目を戻す`;
+        th.onclick = () => toggleCol(c, xs.length - 1);
+      } else {
+        const no = document.createElement('span'); no.textContent = String(c + 1);
+        const x = document.createElement('button'); x.type = 'button'; x.className = 'x'; x.textContent = '✕';
+        x.title = `${c + 1}列目を消す(Excel・PDF・コピーにも含めません。あとで戻せます)`; x.setAttribute('aria-label', `${c + 1}列目を消す`);
+        x.onclick = e => { e.stopPropagation(); toggleCol(c, xs.length - 1); };
+        th.append(no, x);
+      }
       head.append(th);
     }
+    if (bcBefore === nC) addBcHead();
     const body = tbl.createTBody();
     for (let r = 0; r < ys.length - 1; r++) {
       const tr = body.insertRow();
       const rn = tr.insertCell(); rn.className = 'rn'; rn.textContent = r + 1;
       for (let c = 0; c < xs.length - 1; c++) {
+        if (c === bcBefore) { const b = tr.insertCell(); b.className = 'bcc'; }
         const rect = { x: xs[c], y: ys[r], w: xs[c + 1] - xs[c], h: ys[r + 1] - ys[r] };
         const key = keyOf(rect.x, rect.y, rect.w, rect.h);
         const td = tr.insertCell(); td.className = 'c' + (hiddenCols.has(c) ? ' off' : '');
@@ -1094,17 +1130,19 @@
         const bc = document.createElement('div'); bc.className = 'bc'; bc.contentEditable = 'false';
         td.append(t, bc);
         if (cache.has(key)) setCell(td, cache.get(key)); else td.classList.add('stale');
-        t.addEventListener('input', () => { cache.set(key, t.textContent); td.classList.remove('stale'); decorate(td); });
+        t.addEventListener('input', () => { cache.set(key, t.textContent); td.classList.remove('stale'); decorate(td); scheduleBc(); });
         t.addEventListener('focus', () => { hlRect = rect; renderOverlay(); scrollToRect(rect); });
         td.addEventListener('mouseenter', () => { hlRect = rect; renderOverlay(); });
         td.addEventListener('mouseleave', () => { hlRect = null; renderOverlay(); });
         t.addEventListener('keydown', e => {
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); body.rows[r + 1]?.cells[c + 1]?.querySelector('.t').focus(); }
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); body.rows[r + 1]?.querySelector(`td.c[data-c="${c}"] .t`)?.focus(); }
         });
       }
     }
     // 編集中のセルを失わないよう、ドラッグ中以外のみ差し替え
+    if (bcBefore === nC) for (const tr of body.rows) tr.insertCell().className = 'bcc';
     wrap.replaceChildren(tbl);
+    refreshBc();
     updateSteps();
   }
   // ---- JANコード: チェックデジット検証とバーコード表示 ----
@@ -1138,11 +1176,13 @@
     return n >= 1 ? Math.min(n - 1, nCols) : null;
   }
   try { const v = localStorage.getItem('barcodeColPos'); if (v) $('bcPos').value = v; } catch (e) { /* 無視 */ }
+  $('bcPos').oninput = () => renderResult();
+  $('optTrim').addEventListener('change', () => { if (bcInsertIndex(1e9) !== null) renderResult(); });   // 入力に合わせて、画面の表にも反映する
   $('bcPos').onchange = () => {
     const n = parseInt($('bcPos').value, 10);
     if (!(n >= 1)) $('bcPos').value = '';
     try { localStorage.setItem('barcodeColPos', $('bcPos').value); } catch (e) { /* 無視 */ }
-    msg($('bcPos').value ? `Excel・PDFでは、${$('bcPos').value}列目にバーコード専用の列を挿入します(列数を超えたら末尾)。` : 'バーコードは、JANの数字と同じセルに表示します。');
+    msg($('bcPos').value ? `${$('bcPos').value}列目にバーコード専用の列を挿入します(列数を超えたら末尾)。画面の表と、Excel・PDFに反映されます。` : 'バーコードは、JANの数字と同じセルに表示します。');
   };
   $('bcOn').onclick = () => setBarcodeMode(true);
   $('bcOff').onclick = () => setBarcodeMode(false);
@@ -1159,18 +1199,38 @@
     return /^\d{8}$/.test(whole) ? whole : null;
   }
   function setCell(td, text) { td.querySelector('.t').textContent = text; decorate(td); }
+  // バーコード専用の列を描き直す(行ごとに、見えている列の中の最初の有効なJANをバーコードにする)
+  function refreshBc() {
+    document.querySelectorAll('#result tbody tr').forEach(tr => {
+      const cell = tr.querySelector('td.bcc'); if (!cell) return;
+      cell.replaceChildren();
+      const texts = [...tr.querySelectorAll('td.c:not(.off) .t')].map(t => t.textContent);
+      const jan = rowJan(texts);
+      if (!jan) { const n = document.createElement('span'); n.className = 'none'; n.textContent = '—'; cell.append(n); return; }
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      try {
+        JsBarcode(svg, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 50, margin: 4, displayValue: false, flat: true });
+        cell.append(svg);
+      } catch (e) { /* 描画不可は無視 */ }
+    });
+  }
+  let bcTimer = 0;
+  function scheduleBc() { cancelAnimationFrame(bcTimer); bcTimer = requestAnimationFrame(refreshBc); }
   function decorate(td) {
+    scheduleBc();
     const t = td.querySelector('.t'), bc = td.querySelector('.bc');
     bc.replaceChildren(); t.classList.remove('bad'); t.removeAttribute('title');
     const jan = findJan(t.textContent);
     if (!jan) return;
     const { ok, expect } = janCheck(jan);
     if (ok) {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      try {
-        JsBarcode(svg, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 50, margin: 4, displayValue: false, flat: true });
-        bc.append(svg);
-      } catch (e) { /* 描画不可は無視 */ }
+      if (bcInsertIndex(1e9) === null) {   // 専用の列に出すときは、数字のセルには描かない(Excel・PDFと同じ)
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        try {
+          JsBarcode(svg, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 50, margin: 4, displayValue: false, flat: true });
+          bc.append(svg);
+        } catch (e) { /* 描画不可は無視 */ }
+      }
       const m = document.createElement('div'); m.className = 'ok'; m.textContent = '✓ チェックデジットOK'; bc.append(m);
     } else {
       t.classList.add('bad');
