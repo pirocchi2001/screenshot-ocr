@@ -142,6 +142,8 @@
   .roi { position: absolute; border: 2px solid var(--roi); background: rgba(22,163,74,.05); pointer-events: none; }
   .hl { position: absolute; background: rgba(76,172,220,.28); border: 1px solid var(--hi); pointer-events: none; }
   .ln { position: absolute; }
+  .ln.sel::after { border-style: solid !important; border-width: 3px !important; filter: drop-shadow(0 0 3px rgba(255,255,255,.9)); }
+  .ln, .hd { touch-action: none; }
   .ln.h { height: 9px; cursor: ns-resize; margin-top: -4px; }
   .ln.v { width: 9px; cursor: ew-resize; margin-left: -4px; }
   .ln::after { content: ""; position: absolute; }
@@ -209,6 +211,24 @@
   .how li::before { content: counter(s); grid-row: span 2; align-self: center; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--btn); color: var(--btn-ink); font-weight: 700; }
   .how li b { color: var(--ink); font-size: 14px; }
   .empty .hint { font-size: 13px; }
+  /* スマホ・タブレット(指で操作)向け */
+  .touchbar { display: none; flex-direction: column; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--field); }
+  .touchbar .tbrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .touchbar .tbrow.off { visibility: hidden; }   /* 場所は確保したまま隠す(出し入れで画像がずれないように) */
+  .touchbar button { min-height: 40px; padding: 6px 12px; }
+  .touchbar button.danger { color: #fff; background: var(--err); border-color: var(--err); font-weight: 700; }
+  .touchbar .tbhint { font-size: 12px; color: var(--sub); line-height: 1.5; }
+  @media (pointer: coarse), (max-width: 800px) {
+    .touchbar { display: flex; }
+    #ov { touch-action: pan-x pan-y pinch-zoom; }          /* 既定: 1本指で画像をスクロールできる */
+    #ov.mode-draw { touch-action: none; }                    /* 「枠を描く」中だけ、なぞって囲む */
+    .ln.h { height: 36px; margin-top: -18px; } .ln.h::after { top: 17px; }
+    .ln.v { width: 36px; margin-left: -18px; } .ln.v::after { left: 17px; }
+    .hd { width: 24px; height: 24px; margin: -13px 0 0 -13px; border: 2px solid #fff; border-radius: 7px; }
+    .sa { font-size: 14px; }
+    .sa.v { height: 30px; } .sa.h { width: 30px; }
+    .help { display: none; }
+  }
   .zb { min-width: 36px; font-size: 15px; font-weight: 700; padding: 3px 10px; }
   .pane > h2 button, .pane > h2 select { padding: 3px 10px; font-size: 13px; }
   @media (max-width: 800px) {
@@ -221,6 +241,7 @@
     .step .sb button, .step .sb select { padding: 6px 10px; font-size: 13px; }
     main { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow: visible; padding: 12px; }
     .pane { min-height: 70vh; }
+    main .pane:nth-child(2) { order: -1; min-height: 88vh; }   /* スマホでは、原画を先に */
     .help { display: none; }
   }
 </style>
@@ -322,6 +343,22 @@
       <button id="btnAutoTbl" class="accent" title="表の範囲と行・列の分割を自動で決めます">▦ 表を自動検出</button>
       <span class="sepv"></span>
       <button id="zOut" class="zb" title="縮小">−</button><span id="zv" class="zv">100%</span><button id="zIn" class="zb" title="拡大">＋</button><button id="z100" title="等倍(100%)">100%</button><button id="zFit" title="ウィンドウ幅に合わせる">全体</button></h2>
+    <div class="touchbar" id="touchbar">
+      <div class="tbrow">
+        <span class="seg" role="group" aria-label="原画の操作モード">
+          <button id="tbMove" type="button" aria-pressed="true" title="画像をスクロールします">✋ 移動</button>
+          <button id="tbDraw" type="button" aria-pressed="false" title="指でなぞって、表の範囲を囲みます">▭ 枠を描く</button>
+        </span>
+        <button id="tbV" type="button" disabled>＋縦線</button>
+        <button id="tbH" type="button" disabled>＋横線</button>
+      </div>
+      <div class="tbrow off" id="lineAct">
+        <b id="lineActLabel">縦線</b>
+        <button id="laL" type="button" aria-label="大きく左へ">◀◀</button><button id="laL1" type="button" aria-label="少し左へ">◀</button><button id="laR1" type="button" aria-label="少し右へ">▶</button><button id="laR" type="button" aria-label="大きく右へ">▶▶</button>
+        <button id="laDel" type="button" class="danger">🗑 この線を消す</button>
+      </div>
+      <div class="tbhint" id="tbHint">画像を入れたら、「▭ 枠を描く」で表をなぞるか、「▦ 表を自動検出」を押します。</div>
+    </div>
     <div class="scroll" id="imgWrap"><div class="start">
         <div class="drop">
           <div class="ico">🖼️</div>
@@ -351,6 +388,9 @@
   let hLines = [], vLines = [];    // 画像px(絶対座標)
   let cache = new Map();           // セル矩形キー → テキスト
   let addMode = null;              // 'h' | 'v' | null
+  let selLine = null;              // 選んでいる線 {k:'h'|'v', i}
+  let touchMode = 'draw';          // 指の操作: 'move'(スクロール) | 'draw'(枠を描く)
+  const coarse = () => window.matchMedia('(pointer: coarse), (max-width: 800px)').matches;
   let pending = null;              // 自動で追加した直後の線 {k:'h'|'v', i: 配列の添字}。分割する範囲の矢印を出す
   let hlRect = null;               // 左表のホバー強調
   let worker = null, workerModel = null, workerPsm = null, busy = false;
@@ -606,6 +646,7 @@
     const r = findContentRect(srcCanvas);
     if (!r) { msg('表の範囲を自動検出できませんでした。原画上で範囲をドラッグしてください。'); return false; }
     roi = r; runAuto();
+    if (coarse()) setTouchMode('move', false);
     // 表の外枠の罫線が、内側の仕切りとして拾われないよう、枠の端に近い線は除く
     const tol = Math.max(8, Math.round(Math.max(natW, natH) * 0.006));
     hLines = hLines.filter(y => y - roi.y > tol && roi.y + roi.h - y > tol);
@@ -692,7 +733,7 @@
     srcCanvas = canvas; srcCtx = canvas.getContext('2d', { willReadFrequently: true });
     natW = canvas.width; natH = canvas.height;
     const b = await new Promise(r => canvas.toBlob(r, 'image/png'));
-    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear(); colOrder = [];
+    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; selLine = null; hiddenCols.clear(); colOrder = []; touchMode = 'draw';
     buildStage(URL.createObjectURL(b));
     fitZoom(); renderAll();
   }
@@ -770,7 +811,7 @@
         const b = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
         URL.revokeObjectURL(url); url = URL.createObjectURL(b);
       }
-      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear(); colOrder = [];
+      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; selLine = null; hiddenCols.clear(); colOrder = []; touchMode = 'draw';
       buildStage(url);
       fitZoom();
       renderAll();
@@ -870,14 +911,14 @@
       const a = cuts[s], b = cuts[s + 1], on = cur > a && cur < b;
       let d;
       if (pending.k === 'v') {
-        const out = roi.y * zoom > 26;   // 上に余白があれば枠の外、なければ枠の内側
+        const AH = coarse() ? 30 : 18, out = roi.y * zoom > AH + 8;   // 上に余白があれば枠の外、なければ枠の内側
         d = div('sa v' + (on ? ' on' : ''), a, 0, b - a, null, { k: 'seg', s });
-        d.style.top = (out ? roi.y * zoom - 22 : roi.y * zoom + 3) + 'px';
+        d.style.top = (out ? roi.y * zoom - AH - 4 : roi.y * zoom + 3) + 'px';
         d.innerHTML = '<span>◀</span><i></i>' + (on && (b - a) * zoom > 110 ? '<b>この列を分割</b><i></i>' : '') + '<span>▶</span>';
       } else {
-        const out = roi.x * zoom > 26;
+        const AW = coarse() ? 30 : 18, out = roi.x * zoom > AW + 8;
         d = div('sa h' + (on ? ' on' : ''), 0, a, null, b - a, { k: 'seg', s });
-        d.style.left = (out ? roi.x * zoom - 22 : roi.x * zoom + 3) + 'px';
+        d.style.left = (out ? roi.x * zoom - AW - 4 : roi.x * zoom + 3) + 'px';
         d.innerHTML = '<span>▲</span><i></i>' + (on && (b - a) * zoom > 110 ? '<b>この行を分割</b><i></i>' : '') + '<span>▼</span>';
       }
       d.title = on ? 'この範囲を分割しています(線をドラッグで微調整)' : 'クリックで、この範囲を分割する位置に移します';
@@ -918,7 +959,7 @@
     if (bi < 0 || bw < 16) { msg('これ以上、分割できる範囲がありません。'); return; }
     const pos = autoSplitPos(k, cuts[bi], cuts[bi + 1]);
     const arr = k === 'v' ? vLines : hLines;
-    arr.push(pos); pending = { k, i: arr.length - 1 };
+    arr.push(pos); pending = { k, i: arr.length - 1 }; selLine = { k, i: arr.length - 1 };
     changed();
     msg(`${k === 'v' ? '縦線' : '横線'}を自動で追加しました。矢印の範囲を分割しています。別の${k === 'v' ? '列' : '行'}にしたいときは、その矢印をクリック。位置は線のドラッグで調整できます。`);
   }
@@ -932,16 +973,58 @@
     arr[pending.i] = autoSplitPos(pending.k, cuts[s], cuts[s + 1]);
     changed();
   }
+  // ---- 選んだ線の操作(微調整・削除)。スマホではダブルクリックができないので、ボタンで行う ----
+  function selArr() { return selLine ? (selLine.k === 'h' ? hLines : vLines) : null; }
+  function updateLineAct() {
+    const a = selArr(), box = $('lineAct');
+    if (!box) return;
+    if (!a || a[selLine.i] === undefined) { selLine = null; box.classList.add('off'); return; }
+    box.classList.remove('off');
+    const v = selLine.k === 'v';
+    $('lineActLabel').textContent = v ? '縦線' : '横線';
+    $('laL').textContent = v ? '◀◀' : '▲▲'; $('laL1').textContent = v ? '◀' : '▲';
+    $('laR1').textContent = v ? '▶' : '▼'; $('laR').textContent = v ? '▶▶' : '▼▼';
+  }
+  function nudgeLine(dir, big) {
+    const a = selArr(); if (!a || !roi) return;
+    const step = Math.max(1, (big ? 12 : 3) / zoom);
+    const v = selLine.k === 'v', lo = (v ? roi.x : roi.y) + 1, hi = (v ? roi.x + roi.w : roi.y + roi.h) - 1;
+    a[selLine.i] = Math.min(hi, Math.max(lo, a[selLine.i] + dir * step));
+    pending = null; changed();
+  }
+  function deleteSelLine() {
+    const a = selArr(); if (!a) return;
+    a.splice(selLine.i, 1); selLine = null; pending = null; changed();
+    msg('線を消しました。');
+  }
+  $('laL').onclick = () => nudgeLine(-1, true); $('laL1').onclick = () => nudgeLine(-1, false);
+  $('laR1').onclick = () => nudgeLine(1, false); $('laR').onclick = () => nudgeLine(1, true);
+  $('laDel').onclick = deleteSelLine;
+  $('tbV').onclick = () => $('btnAddV').click(); $('tbH').onclick = () => $('btnAddH').click();
+  function setTouchMode(m, say = true) {
+    touchMode = m;
+    $('tbMove').setAttribute('aria-pressed', String(m === 'move')); $('tbDraw').setAttribute('aria-pressed', String(m === 'draw'));
+    $('tbHint').textContent = m === 'draw'
+      ? '表の左上から右下まで、指でなぞって囲んでください。(スクロールするときは「✋ 移動」)'
+      : '画像をスクロールできます。線をつかんで動かす・タップして選ぶと、微調整や削除ができます。枠をやり直すときは「▭ 枠を描く」。';
+    renderOverlay();
+    if (say && m === 'draw') msg('指でなぞって、表の範囲を囲んでください。');
+  }
+  $('tbMove').onclick = () => setTouchMode('move'); $('tbDraw').onclick = () => setTouchMode('draw');
+  document.addEventListener('keydown', e => {
+    if (selLine && (e.key === 'Delete' || e.key === 'Backspace') && !(e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))) { e.preventDefault(); deleteSelLine(); }
+  });
   function renderOverlay() {
     if (!ov) return;
     ov.replaceChildren();
-    ov.className = addMode ? 'adding-' + addMode : '';
+    ov.className = (addMode ? 'adding-' + addMode : '') + (touchMode === 'draw' ? ' mode-draw' : '');
+    updateLineAct();
     if (!roi) return;
     ov.append(div('roi', roi.x - 1 / zoom * 2, roi.y - 1 / zoom * 2, roi.w, roi.h));
     if (hlRect) ov.append(div('hl', hlRect.x, hlRect.y, hlRect.w, hlRect.h));
-    hLines.forEach((y, i) => ov.append(div('ln h', roi.x, y, roi.w, null, { k: 'h', i })));
+    hLines.forEach((y, i) => ov.append(div('ln h' + (selLine && selLine.k === 'h' && selLine.i === i ? ' sel' : ''), roi.x, y, roi.w, null, { k: 'h', i })));
     renderArrows();
-    vLines.forEach((x, i) => ov.append(div('ln v', x, roi.y, null, roi.h, { k: 'v', i })));
+    vLines.forEach((x, i) => ov.append(div('ln v' + (selLine && selLine.k === 'v' && selLine.i === i ? ' sel' : ''), x, roi.y, null, roi.h, { k: 'v', i })));
     const { x, y, w, h } = roi;
     const pts = { tl: [x, y], tr: [x + w, y], bl: [x, y + h], br: [x + w, y + h], t: [x + w / 2, y], b: [x + w / 2, y + h], l: [x, y + h / 2], r: [x + w, y + h / 2] };
     for (const [n, [px, py]] of Object.entries(pts)) {
@@ -966,9 +1049,13 @@
       if (addMode === 'v' && p.x > roi.x && p.x < roi.x + roi.w) vLines.push(p.x);
       addMode = null; changed(); return;
     }
-    if (t.k === 'h' || t.k === 'v') drag = { type: 'line', k: t.k, i: +t.i };
-    else if (t.k === 'hd') { drag = { type: 'resize', n: t.n }; pending = null; }
-    else { drag = { type: 'new', x0: p.x, y0: p.y }; pending = null; }
+    if (t.k === 'h' || t.k === 'v') { drag = { type: 'line', k: t.k, i: +t.i }; selLine = { k: t.k, i: +t.i }; }
+    else if (t.k === 'hd') { drag = { type: 'resize', n: t.n }; pending = null; selLine = null; }
+    else {
+      // 指で「移動」モードのときは、枠を描かずに、そのままスクロールさせる
+      if (e.pointerType === 'touch' && touchMode === 'move') { if (selLine) { selLine = null; renderOverlay(); } return; }
+      drag = { type: 'new', x0: p.x, y0: p.y, prev: { roi, h: hLines.slice(), v: vLines.slice() } }; pending = null; selLine = null;
+    }
   }
   function onMove(e) {
     if (!drag) return;
@@ -994,9 +1081,11 @@
     if (!drag) return;
     const d = drag; drag = null;
     if (d.type === 'new') {
-      if (roi.w < 12 || roi.h < 12) { roi = null; hLines = []; vLines = []; changed(); return; }
+      // 短いタップ(ほとんど動かしていない)では、いまの枠と仕切りを消さない
+      if (roi.w < 12 || roi.h < 12) { roi = d.prev.roi; hLines = d.prev.h; vLines = d.prev.v; changed(); return; }
       roi = { x: r2(roi.x), y: r2(roi.y), w: r2(roi.w), h: r2(roi.h) };
       runAuto();
+      if (coarse()) setTouchMode('move', false);   // 囲み終わったら、スクロールできる状態に戻す
       if ($('optAuto').checked) runOcr(false);
     } else if (d.type === 'resize') {
       roi = { x: r2(roi.x), y: r2(roi.y), w: r2(roi.w), h: r2(roi.h) };
@@ -1010,7 +1099,7 @@
     if (t.k === 'h') hLines.splice(+t.i, 1);
     else if (t.k === 'v') vLines.splice(+t.i, 1);
     else return;
-    pending = null;
+    pending = null; selLine = null;
     changed();
   }
   document.addEventListener('keydown', e => {
@@ -1033,12 +1122,13 @@
     const g = TableDetect.detectGrid(grayOf(x, y, w, h), w, h, { rowGap: +$('rowGap').value, colK: +$('colK').value });
     hLines = g.h.map(v => y + v);
     vLines = g.v.map(v => x + v);
+    selLine = null;
     changed();
     const gr = grid();
     msg(`自動分割: ${gr.ys.length - 1}行 × ${gr.xs.length - 1}列。線をドラッグして調整できます。`);
   }
-  $('btnAuto').onclick = () => { pending = null; runAuto(); };
-  $('btnClear').onclick = () => { hLines = []; vLines = []; pending = null; changed(); };
+  $('btnAuto').onclick = () => { pending = null; selLine = null; runAuto(); };
+  $('btnClear').onclick = () => { hLines = []; vLines = []; pending = null; selLine = null; changed(); };
   $('btnAddH').onclick = () => { addMode = null; addLineAuto('h'); };
   $('btnAddV').onclick = () => { addMode = null; addLineAuto('v'); };
   for (const [id, out, f] of [['rowGap', 'rowGapV', v => v + 'px'], ['colK', 'colKV', v => (+v).toFixed(1) + '×']]) {
@@ -1061,7 +1151,7 @@
   function updateButtons() {
     updateSteps();
     const has = !!roi;
-    for (const id of ['btnOcr', 'btnOcrAll', 'btnXlsx', 'btnCopy', 'btnPdf', 'btnAddH', 'btnAddV', 'btnAuto', 'btnClear']) $(id).disabled = !has || (busy && id.startsWith('btnOcr'));
+    for (const id of ['btnOcr', 'btnOcrAll', 'btnXlsx', 'btnCopy', 'btnPdf', 'btnAddH', 'btnAddV', 'btnAuto', 'btnClear', 'tbV', 'tbH']) $(id).disabled = !has || (busy && id.startsWith('btnOcr'));
   }
   function renderAll() { renderOverlay(); renderResult(); updateButtons(); }
 
@@ -1530,7 +1620,7 @@
     $('advModel').textContent = '精度: ' + $('model').selectedOptions[0].textContent.replace(/[((].*$/, '');
   }
   $('model').onchange = () => { updateAdv(); msg('精度設定を変更しました。次回のOCRから反映されます。'); };
-  updateAdv(); updateButtons();
+  updateAdv(); updateButtons(); setTouchMode('draw', false);
   // 画像の補正メニュー
   const fixMenu = $('fixMenu'), btnFix = $('btnFix');
   const closeFix = () => { fixMenu.hidden = true; btnFix.setAttribute('aria-expanded', 'false'); };
