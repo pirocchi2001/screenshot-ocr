@@ -51,6 +51,11 @@
   .opt input[type=range] { width: 90px; accent-color: var(--btn); }
   .opt input[type=checkbox] { accent-color: var(--btn); }
   .sep { width: 1px; height: 24px; background: var(--line); }
+  .seg { display: inline-flex; }
+  .seg button { border-radius: 0; padding: 6px 12px; }
+  .seg button:first-child { border-radius: 8px 0 0 8px; }
+  .seg button:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+  .seg button[aria-pressed=true] { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); font-weight: 700; position: relative; }
   /* 操作パネル(カード) */
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
   .tools { margin: 16px 16px 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
@@ -150,6 +155,12 @@
     <select id="pdfDir" title="用紙の向き"><option value="portrait">A4 縦</option><option value="landscape">A4 横</option></select>
     <label class="opt"><input type="checkbox" id="optTrim"> 空の行・列を除く</label>
     <label class="opt"><input type="checkbox" id="optNum" checked> 数字は数値で保存</label>
+    <span class="sep"></span>
+    <span class="lbl" style="font-size:13px;font-weight:700">バーコード列</span>
+    <span class="seg" role="group" aria-label="バーコード列の有無">
+      <button id="bcOn" type="button" aria-pressed="true" title="JANコードの列に、バーコードとチェックデジットの確認を付けます">あり</button>
+      <button id="bcOff" type="button" aria-pressed="false" title="バーコード列として扱わず、ふつうの文字・数字として扱います">なし</button>
+    </span>
   </div>
   <div class="row">
     <span class="lbl">仕切り</span>
@@ -662,7 +673,21 @@
     const cd = (10 - sum % 10) % 10;
     return { ok: cd === +d[n - 1], expect: cd };
   }
+  // バーコード列モード(既定は「あり」)。「なし」のときはJANコードも通常の文字として扱う
+  let barcodeOn = true;
+  try { barcodeOn = localStorage.getItem('barcodeCol') !== 'off'; } catch (e) { /* 保存できなくても動く */ }
+  function setBarcodeMode(on, save = true) {
+    barcodeOn = on;
+    $('bcOn').setAttribute('aria-pressed', String(on)); $('bcOff').setAttribute('aria-pressed', String(!on));
+    if (save) { try { localStorage.setItem('barcodeCol', on ? 'on' : 'off'); } catch (e) { /* 無視 */ } }
+    renderResult();
+    if (save) msg(on ? 'バーコード列: あり(JANコードにバーコードとチェックデジット確認を付けます)' : 'バーコード列: なし(JANコードも通常の文字・数字として扱います)');
+  }
+  $('bcOn').setAttribute('aria-pressed', String(barcodeOn)); $('bcOff').setAttribute('aria-pressed', String(!barcodeOn));
+  $('bcOn').onclick = () => setBarcodeMode(true);
+  $('bcOff').onclick = () => setBarcodeMode(false);
   function findJan(text) {
+    if (!barcodeOn) return null;
     const m = text.match(/(?<![\d])(?:\d[ \-‐ー−]?){12}\d(?![\d])/);
     if (m) return m[0].replace(/\D/g, '');
     const whole = text.replace(/[\s\-‐ー−]/g, '');
@@ -947,7 +972,7 @@
           const jan = findJan(v);
           // 数値化: 桁区切り/小数を含む数字、またはJAN・先頭0以外の整数
           const t = v.trim(), digits = t.replace(/,/g, '');
-          const isNum = $('optNum').checked && NUM_RE.test(t) && !jan && digits.replace(/[-.]/g, '').length <= 15 && !(/^0\d/.test(digits) && !digits.includes('.'));
+          const isNum = $('optNum').checked && NUM_RE.test(t) && !jan && !/^\d{12,}$/.test(digits) && digits.replace(/[-.]/g, '').length <= 15 && !(/^0\d/.test(digits) && !digits.includes('.'));
           if (isNum) { cell.value = Number(digits); if (t.includes(',')) cell.numFmt = '#,##0' + (digits.includes('.') ? '.' + '0'.repeat(digits.split('.')[1].length) : ''); }
           else cell.value = v;
           cell.alignment = { vertical: 'top', wrapText: true, horizontal: isNum ? 'right' : 'left' };
