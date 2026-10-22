@@ -58,10 +58,36 @@
   .seg button[aria-pressed=true] { background: var(--btn); border-color: var(--btn); color: var(--btn-ink); font-weight: 700; position: relative; }
   /* 操作パネル(カード) */
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); }
-  .tools { margin: 16px 16px 0; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
-  .tools .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .tools { margin: 16px 16px 0; padding: 0; display: flex; flex-direction: column; overflow: hidden; }
   .tools .lbl { font-size: 13px; font-weight: 700; color: var(--ink); }
-  #status { display: flex; gap: 12px; align-items: center; min-height: 24px; font-size: 13px; color: var(--sub); border-top: 1px solid var(--line); padding-top: 8px; }
+  /* 作業の流れ(1 画像 → 2 表 → 3 認識 → 4 出力)。いまの段階を強調する */
+  .steps { display: flex; flex-wrap: wrap; }
+  .step { flex: 1 1 230px; padding: 10px 16px 12px; border-left: 1px solid var(--line); border-top: 3px solid transparent; transition: background-color .2s, border-color .2s; }
+  .step:first-child { border-left: 0; }
+  .step .sh { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--sub); margin-bottom: 8px; }
+  .step .sh i { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; font-style: normal; font-size: 12px; font-weight: 700;
+    background: var(--field); color: var(--sub); border: 1px solid var(--line); }
+  .step .sb { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .step.cur { background: color-mix(in srgb, var(--hi) 11%, transparent); border-top-color: var(--hi); }
+  .step.cur .sh { color: var(--ink); }
+  .step.cur .sh i { background: var(--btn); color: var(--btn-ink); border-color: var(--btn); }
+  .step.done .sh i { background: var(--ok); border-color: var(--ok); color: #fff; font-size: 0; }
+  .step.done .sh i::before { content: "✓"; font-size: 12px; }
+  .adv { border-top: 1px solid var(--line); padding: 0 16px; }
+  .adv > summary { cursor: pointer; list-style: none; padding: 8px 0; font-size: 13px; font-weight: 700; color: var(--sub); display: flex; align-items: center; gap: 10px; user-select: none; }
+  .adv > summary::-webkit-details-marker { display: none; }
+  .adv > summary::before { content: "▸"; display: inline-block; transition: transform .15s; }
+  .adv[open] > summary::before { transform: rotate(90deg); }
+  .adv > summary:hover { color: var(--ink); }
+  .adv .chips { display: flex; gap: 6px; flex-wrap: wrap; font-weight: 400; }
+  .adv .chips span { font-size: 12px; color: var(--sub); background: var(--field); border: 1px solid var(--line); border-radius: 999px; padding: 0 9px; }
+  .adv[open] .chips { display: none; }
+  .advbody { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px 24px; padding: 4px 0 12px; }
+  .advbody .grp { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .advbody .lbl { min-width: 5.5em; }
+  input.num { width: 62px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: 14px; background: var(--panel); color: var(--ink); }
+  #status { padding: 8px 16px; background: var(--field); }
+  #status { display: flex; gap: 12px; align-items: center; min-height: 34px; font-size: 13px; color: var(--sub); border-top: 1px solid var(--line); }
   #bar { flex: 0 0 160px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; visibility: hidden; }
   #bar i { display: block; height: 100%; width: 0; background: var(--btn); }
   main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: 16px; padding: 16px; overflow: hidden; }
@@ -141,9 +167,45 @@
     #printArea td svg { display: block; }
     #printArea .ft { position: absolute; left: 0; right: 0; bottom: 0; font-size: 7.5pt; color: #444; display: flex; justify-content: space-between; }
   }
+  /* 原画ヘッダー: 補正メニュー・表の自動検出・ズーム */
+  .pane > h2 { flex-wrap: wrap; }
+  .menuwrap { position: relative; }
+  .menu { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; min-width: 210px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 28px rgba(20,33,46,.22); }
+  .menu[hidden] { display: none; }
+  .pane > h2 .menu button { border: 0; background: transparent; text-align: left; padding: 8px 10px; font-size: 14px; border-radius: 6px; box-shadow: none; }
+  .pane > h2 .menu button:hover { background: var(--field); }
+  .pane > h2 button.accent { background: var(--hi); border-color: var(--hi); color: #0b2233; font-weight: 700; }
+  .pane > h2 button.accent:hover:not(:disabled) { filter: brightness(1.06); }
+  .sepv { width: 1px; height: 20px; background: var(--line); }
+  .zv { min-width: 42px; text-align: center; font-size: 13px; font-weight: 400; color: var(--sub); }
+  /* はじめの案内(画像を入れる前) */
+  .start { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 28px 20px; }
+  .drop { width: min(520px, 100%); padding: 30px 20px; text-align: center; border: 2px dashed var(--line); border-radius: 16px; background: var(--field); transition: border-color .15s, background-color .15s; }
+  .drop .ico { font-size: 40px; line-height: 1; margin-bottom: 8px; }
+  .drop .big { font-size: 18px; font-weight: 700; }
+  .drop .small { color: var(--sub); margin: 4px 0 14px; }
+  .drop kbd { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; font: inherit; font-size: 12px; }
+  #imgWrap.dragging .drop { border-color: var(--hi); background: color-mix(in srgb, var(--hi) 14%, transparent); }
+  .how { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; width: min(520px, 100%); counter-reset: s; }
+  .how li { counter-increment: s; display: grid; grid-template-columns: 28px 1fr; column-gap: 12px; align-items: baseline; color: var(--sub); font-size: 13px; }
+  .how li::before { content: counter(s); grid-row: span 2; align-self: center; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--btn); color: var(--btn-ink); font-weight: 700; }
+  .how li b { color: var(--ink); font-size: 14px; }
+  .empty .hint { font-size: 13px; }
   .zb { min-width: 36px; font-size: 15px; font-weight: 700; padding: 3px 10px; }
   .pane > h2 button, .pane > h2 select { padding: 3px 10px; font-size: 13px; }
-  @media (max-width: 800px) { main { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); } header { padding: 10px 14px 14px; } }
+  @media (max-width: 800px) {
+    html, body { height: auto; }
+    header { padding: 10px 14px 14px; }
+    .tools { margin: 12px 12px 0; }
+    .step { flex: 1 1 calc(50% - 1px); padding: 8px 12px 10px; border-top: 3px solid transparent; }
+    .step:nth-child(2n+1) { border-left: 0; }
+    .step.cur { border-top-color: var(--hi); }
+    .step .sb button, .step .sb select { padding: 6px 10px; font-size: 13px; }
+    main { grid-template-columns: minmax(0, 1fr); grid-template-rows: none; overflow: visible; padding: 12px; }
+    .pane { min-height: 70vh; }
+    .help { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -160,54 +222,102 @@
     <a class="btn" href="manual/screenshot-ocr-manual.pdf" target="_blank" rel="noopener" title="初心者向けの説明書を開きます">説明書</a>
   </div>
 </header>
-<section class="card tools">
-  <div class="row">
-    <button id="btnFile">画像を開く</button>
-    <button id="btnPaste">クリップボードから貼付</button>
-    <input id="file" type="file" accept="image/*" hidden>
-    <span class="sep"></span>
-    <button id="btnOcr" disabled>OCR実行</button>
-    <button id="btnOcrAll" disabled title="編集内容も含め、すべてのセルを認識し直します">全て再認識</button>
-    <span class="sep"></span>
-    <button id="btnXlsx" class="primary" disabled title="Excelファイル(.xlsx)として保存します">Excel保存</button>
-    <button id="btnCopy" disabled title="Excelなどに貼り付け可能(タブ区切り)">コピー</button>
-    <button id="btnPdf" disabled title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFになります">PDF出力</button>
-    <select id="pdfDir" title="用紙の向き"><option value="portrait">A4 縦</option><option value="landscape">A4 横</option></select>
-    <label class="opt"><input type="checkbox" id="optTrim"> 空の行・列を除く</label>
-    <label class="opt"><input type="checkbox" id="optNum" checked> 数字は数値で保存</label>
-    <span class="sep"></span>
-    <span class="lbl" style="font-size:13px;font-weight:700">バーコード列</span>
-    <span class="seg" role="group" aria-label="バーコード列の有無">
-      <button id="bcOn" type="button" aria-pressed="true" title="JANコードの列に、バーコードとチェックデジットの確認を付けます">あり</button>
-      <button id="bcOff" type="button" aria-pressed="false" title="バーコード列として扱わず、ふつうの文字・数字として扱います">なし</button>
-    </span>
-    <label class="opt" id="bcPosWrap" title="Excel・PDFに、バーコードだけの列を指定の位置へ挿入します。空欄なら、JANの数字と同じセルに表示します">
-      <input type="number" id="bcPos" min="1" step="1" placeholder="空欄" style="width:62px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;background:var(--panel);color:var(--ink)"> 列目に挿入
-    </label>
+<section class="card tools" id="tools">
+  <div class="steps">
+    <div class="step" data-step="1">
+      <div class="sh"><i>1</i>画像を入れる</div>
+      <div class="sb">
+        <button id="btnFile">画像を開く</button>
+        <button id="btnPaste">クリップボードから貼付</button>
+        <input id="file" type="file" accept="image/*" hidden>
+      </div>
+    </div>
+    <div class="step" data-step="2">
+      <div class="sh"><i>2</i>表を決める</div>
+      <div class="sb">
+        <button id="btnAddH" disabled>＋横線</button>
+        <button id="btnAddV" disabled>＋縦線</button>
+        <button id="btnAuto" disabled>自動分割をやり直す</button>
+        <button id="btnClear" disabled>仕切りを消す</button>
+      </div>
+    </div>
+    <div class="step" data-step="3">
+      <div class="sh"><i>3</i>認識する</div>
+      <div class="sb">
+        <button id="btnOcr" class="primary" disabled>OCR実行</button>
+        <button id="btnOcrAll" disabled title="編集内容も含め、すべてのセルを認識し直します">全て再認識</button>
+      </div>
+    </div>
+    <div class="step" data-step="4">
+      <div class="sh"><i>4</i>出力する</div>
+      <div class="sb">
+        <button id="btnXlsx" class="primary" disabled title="Excelファイル(.xlsx)として保存します">Excel保存</button>
+        <button id="btnCopy" disabled title="Excelなどに貼り付け可能(タブ区切り)">コピー</button>
+        <button id="btnPdf" disabled title="印刷画面が開きます。送信先を「PDFに保存」にするとPDFになります">PDF出力</button>
+        <select id="pdfDir" title="用紙の向き"><option value="portrait">A4 縦</option><option value="landscape">A4 横</option></select>
+      </div>
+    </div>
   </div>
-  <div class="row">
-    <span class="lbl">仕切り</span>
-    <button id="btnAddH" disabled>＋横線</button>
-    <button id="btnAddV" disabled>＋縦線</button>
-    <button id="btnAuto" disabled>自動分割をやり直す</button>
-    <button id="btnClear" disabled>仕切りを消す</button>
-    <label class="opt">行間の最小幅 <input type="range" id="rowGap" min="1" max="12" value="2"><b id="rowGapV">2px</b></label>
-    <label class="opt">列間の最小幅 <input type="range" id="colK" min="0.3" max="3" step="0.1" value="0.8"><b id="colKV">0.8×</b></label>
-    <span class="sep"></span>
-    <label class="opt"><input type="checkbox" id="optAuto" checked> 枠指定後に自動OCR</label>
-    <label class="opt">精度 <select id="model"><option value="best">高精度(大・初回のみ待ち)</option><option value="fast">標準(軽量)</option></select></label>
-  </div>
+  <details class="adv" id="adv">
+    <summary>詳細設定<span class="chips"><span id="advBc"></span><span id="advModel"></span></span></summary>
+    <div class="advbody">
+      <div class="grp"><span class="lbl">出力</span>
+        <label class="opt"><input type="checkbox" id="optTrim"> 空の行・列を除く</label>
+        <label class="opt"><input type="checkbox" id="optNum" checked> 数字は数値で保存</label>
+      </div>
+      <div class="grp"><span class="lbl">バーコード列</span>
+        <span class="seg" role="group" aria-label="バーコード列の有無">
+          <button id="bcOn" type="button" aria-pressed="true" title="JANコードの列に、バーコードとチェックデジットの確認を付けます">あり</button>
+          <button id="bcOff" type="button" aria-pressed="false" title="バーコード列として扱わず、ふつうの文字・数字として扱います">なし</button>
+        </span>
+        <label class="opt" id="bcPosWrap" title="Excel・PDFに、バーコードだけの列を指定の位置へ挿入します。空欄なら、JANの数字と同じセルに表示します">
+          <input type="number" id="bcPos" class="num" min="1" step="1" placeholder="空欄"> 列目に挿入
+        </label>
+      </div>
+      <div class="grp"><span class="lbl">表の分割</span>
+        <label class="opt">行間の最小幅 <input type="range" id="rowGap" min="1" max="12" value="2"><b id="rowGapV">2px</b></label>
+        <label class="opt">列間の最小幅 <input type="range" id="colK" min="0.3" max="3" step="0.1" value="0.8"><b id="colKV">0.8×</b></label>
+      </div>
+      <div class="grp"><span class="lbl">認識</span>
+        <label class="opt"><input type="checkbox" id="optAuto" checked> 範囲を決めたら自動でOCR</label>
+        <label class="opt">精度 <select id="model"><option value="best">高精度(大・初回のみ待ち)</option><option value="fast">標準(軽量)</option></select></label>
+      </div>
+    </div>
+  </details>
   <div id="status"><span id="msg">画像を Ctrl/⌘+V で貼り付けてください。</span><div id="bar"><i></i></div></div>
 </section>
 <main>
   <section class="pane">
     <h2><span>認識結果(クリックで編集)</span><span class="grow"></span><span id="dims"></span></h2>
-    <div class="scroll" id="resultWrap"><div class="empty">画像を貼り付けて、右の原画で表の範囲をドラッグしてください。</div></div>
+    <div class="scroll" id="resultWrap"><div class="empty">認識した結果の表が、ここに出ます。<br><span class="hint">まず右の原画に、画像を入れてください。</span></div></div>
   </section>
   <section class="pane">
     <h2><span>原画</span><span class="grow"></span>
-      <button id="btnRotL" title="左(反時計回り)に90°回転">↺</button><button id="btnRotR" title="右(時計回り)に90°回転">↻</button><button id="btnOrient" title="文字の向きを調べて、自動で正しい向きに直す">向きを自動判定</button><button id="btnPersp" title="斜めから撮った紙の台形ゆがみを、正面に直す">歪み補正</button><button id="btnAutoTbl" title="表の範囲と行・列の分割を自動で決めます">表を自動検出</button><span style="width:8px"></span><button id="zOut" class="zb" title="縮小">−</button><span id="zv" style="min-width:42px;text-align:center">100%</span><button id="zIn" class="zb" title="拡大">＋</button><button id="z100" title="等倍(100%)">100%</button><button id="zFit" title="ウィンドウ幅に合わせる">全体</button></h2>
-    <div class="scroll" id="imgWrap"><div class="empty"><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>V</kbd> でスクリーンショットを貼り付け<br>またはファイルをここにドロップ</div></div>
+      <span class="menuwrap">
+        <button id="btnFix" aria-haspopup="true" aria-expanded="false" title="画像の向きやゆがみを直します">画像の補正 ▾</button>
+        <div class="menu" id="fixMenu" hidden>
+          <button id="btnRotL" title="左(反時計回り)に90°回転">↺ 左に90°回転</button>
+          <button id="btnRotR" title="右(時計回り)に90°回転">↻ 右に90°回転</button>
+          <button id="btnOrient" title="文字の向きを調べて、自動で正しい向きに直す">文字の向きを自動判定</button>
+          <button id="btnPersp" title="斜めから撮った紙の台形ゆがみを、正面に直す">台形ゆがみを補正</button>
+        </div>
+      </span>
+      <button id="btnAutoTbl" class="accent" title="表の範囲と行・列の分割を自動で決めます">▦ 表を自動検出</button>
+      <span class="sepv"></span>
+      <button id="zOut" class="zb" title="縮小">−</button><span id="zv" class="zv">100%</span><button id="zIn" class="zb" title="拡大">＋</button><button id="z100" title="等倍(100%)">100%</button><button id="zFit" title="ウィンドウ幅に合わせる">全体</button></h2>
+    <div class="scroll" id="imgWrap"><div class="start">
+        <div class="drop">
+          <div class="ico">🖼️</div>
+          <div class="big">画像をここにドロップ</div>
+          <div class="small">または <kbd>⌘</kbd> / <kbd>Ctrl</kbd> + <kbd>V</kbd> で貼り付け</div>
+          <button id="btnFile2" class="primary">画像を開く…</button>
+        </div>
+        <ol class="how">
+          <li><b>画像を入れる</b>スクショや写真を、貼り付け・ドロップ</li>
+          <li><b>表の範囲を決める</b>ドラッグ、または「表を自動検出」</li>
+          <li><b>OCR実行 → 保存</b>Excel・PDF・コピーで出力</li>
+        </ol>
+      </div></div>
     <div class="help">ドラッグで表の範囲を指定 / 線をドラッグで移動・ダブルクリックで削除 / ＋横線・＋縦線で自動配置(矢印の範囲を分割。別の範囲は矢印をクリック) / Ctrl+ホイールで拡大縮小</div>
   </section>
 </main>
@@ -681,10 +791,12 @@
     } catch { msg('ブラウザが貼り付けを許可しませんでした。Ctrl/⌘+V をお使いください。'); }
   };
   $('btnFile').onclick = () => $('file').click();
+  $('btnFile2').onclick = () => $('file').click();
   $('file').onchange = e => { if (e.target.files[0]) loadBlob(e.target.files[0]); e.target.value = ''; };
-  $('imgWrap').addEventListener('dragover', e => e.preventDefault());
+  $('imgWrap').addEventListener('dragover', e => { e.preventDefault(); $('imgWrap').classList.add('dragging'); });
+  $('imgWrap').addEventListener('dragleave', e => { if (e.target === $('imgWrap') || !$('imgWrap').contains(e.relatedTarget)) $('imgWrap').classList.remove('dragging'); });
   $('imgWrap').addEventListener('drop', e => {
-    e.preventDefault();
+    e.preventDefault(); $('imgWrap').classList.remove('dragging');
     const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
     if (f) loadBlob(f);
   });
@@ -918,7 +1030,18 @@
 
   // ---- 左の結果表 ----
   function changed() { renderOverlay(); renderResult(); updateButtons(); }
+  // いまの作業段階(1 画像 → 2 表 → 3 認識 → 4 出力)を強調する
+  function updateSteps() {
+    const hasText = [...cache.values()].some(v => v && v.trim());
+    const cur = !srcCanvas ? 1 : !roi ? 2 : !hasText ? 3 : 4;
+    document.querySelectorAll('.step').forEach(el => {
+      const n = +el.dataset.step;
+      el.classList.toggle('cur', n === cur);
+      el.classList.toggle('done', n < cur);
+    });
+  }
   function updateButtons() {
+    updateSteps();
     const has = !!roi;
     for (const id of ['btnOcr', 'btnOcrAll', 'btnXlsx', 'btnCopy', 'btnPdf', 'btnAddH', 'btnAddV', 'btnAuto', 'btnClear']) $(id).disabled = !has || (busy && id.startsWith('btnOcr'));
   }
@@ -938,7 +1061,10 @@
   function renderResult() {
     const wrap = $('resultWrap');
     const g = grid();
-    if (!g) { wrap.innerHTML = '<div class="empty">原画で表の範囲をドラッグしてください。</div>'; $('dims').textContent = ''; return; }
+    if (!g) { wrap.innerHTML = srcCanvas
+      ? '<div class="empty">表の範囲が決まると、ここに結果が出ます。<br><span class="hint">右の原画で範囲をドラッグするか、「▦ 表を自動検出」を押してください。</span></div>'
+      : '<div class="empty">認識した結果の表が、ここに出ます。<br><span class="hint">まず右の原画に、画像を入れてください。</span></div>';
+    $('dims').textContent = ''; return; }
     const { xs, ys } = g;
     if (hiddenN !== xs.length - 1) hiddenCols.clear();   // 列の数が変わったら、非表示の指定は解除
     $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列` + (hiddenCols.size ? `(非表示 ${hiddenCols.size}列)` : '');
@@ -979,6 +1105,7 @@
     }
     // 編集中のセルを失わないよう、ドラッグ中以外のみ差し替え
     wrap.replaceChildren(tbl);
+    updateSteps();
   }
   // ---- JANコード: チェックデジット検証とバーコード表示 ----
   function janCheck(d) {           // d: 8桁または13桁の数字列
@@ -998,6 +1125,7 @@
     barcodeOn = on;
     $('bcOn').setAttribute('aria-pressed', String(on)); $('bcOff').setAttribute('aria-pressed', String(!on));
     $('bcPosWrap').hidden = !on;
+    if (typeof updateAdv === 'function' && $('advBc')) updateAdv();
     if (save) { try { localStorage.setItem('barcodeCol', on ? 'on' : 'off'); } catch (e) { /* 無視 */ } }
     renderResult();
     if (save) msg(on ? 'バーコード列: あり(JANコードにバーコードとチェックデジット確認を付けます)' : 'バーコード列: なし(JANコードも通常の文字・数字として扱います)');
@@ -1156,7 +1284,7 @@
     visionOK = true;
     const o = document.createElement('option');
     o.value = 'vision'; o.textContent = 'Macの文字認識(最高精度・Corkboard経由)';
-    $('model').prepend(o); $('model').value = 'vision';
+    $('model').prepend(o); $('model').value = 'vision'; updateAdv();
   }
   window.addEventListener('message', e => {
     if (e.origin !== CORK_ORIGIN || !window.opener || e.source !== window.opener) return;
@@ -1266,7 +1394,19 @@
   }
   $('btnOcr').onclick = () => runOcr(false);
   $('btnOcrAll').onclick = () => runOcr(true);
-  $('model').onchange = () => msg('精度設定を変更しました。次回のOCRから反映されます。');
+  function updateAdv() {
+    $('advBc').textContent = 'バーコード列: ' + (barcodeOn ? 'あり' : 'なし');
+    $('advModel').textContent = '精度: ' + $('model').selectedOptions[0].textContent.replace(/[((].*$/, '');
+  }
+  $('model').onchange = () => { updateAdv(); msg('精度設定を変更しました。次回のOCRから反映されます。'); };
+  updateAdv(); updateButtons();
+  // 画像の補正メニュー
+  const fixMenu = $('fixMenu'), btnFix = $('btnFix');
+  const closeFix = () => { fixMenu.hidden = true; btnFix.setAttribute('aria-expanded', 'false'); };
+  btnFix.onclick = e => { e.stopPropagation(); fixMenu.hidden = !fixMenu.hidden; btnFix.setAttribute('aria-expanded', String(!fixMenu.hidden)); };
+  fixMenu.addEventListener('click', () => closeFix());
+  document.addEventListener('click', e => { if (!fixMenu.hidden && !fixMenu.contains(e.target)) closeFix(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFix(); });
 
   // ---- Excel / コピー ----
   function matrix() {
