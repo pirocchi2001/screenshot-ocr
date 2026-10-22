@@ -510,12 +510,26 @@
     const ratio = sr / Math.max(1, sc);
     const cand = ratio > 1.4 ? [0, 2] : ratio < 1 / 1.4 ? [1, 3] : [0, 1, 2, 3];
     // 文字のある中央付近を実寸で切り出して、各向きでOCRし、確からしい文字数を比べる
-    const S = 1 / kk, side = 1400;
+    const S = 1 / kk, side = (visionOK && $('model').value === 'vision') ? 1400 : 1000;
     const bx = (x0 + x1) / 2 * S, by = (y0 + y1) / 2 * S;
     const cw = Math.min(canvas.width, side, (x1 - x0 + 1) * S), ch = Math.min(canvas.height, side, (y1 - y0 + 1) * S);
     const sx = Math.max(0, Math.min(canvas.width - cw, bx - cw / 2)), sy = Math.max(0, Math.min(canvas.height - ch, by - ch / 2));
     const crop = document.createElement('canvas'); crop.width = Math.round(cw); crop.height = Math.round(ch);
     crop.getContext('2d').drawImage(canvas, sx, sy, cw, ch, 0, 0, crop.width, crop.height);
+    // Macの文字認識が使えるなら、文字の並ぶ向きから1回で判定する(速い)。使えなければ従来の方法
+    if (visionOK && $('model').value === 'vision') {
+      try {
+        if (await visionPing()) {
+          msg('文字の向きを判定中…(Macの文字認識)');
+          const small = document.createElement('canvas'), sk = Math.min(1, 1200 / Math.max(crop.width, crop.height));
+          small.width = Math.round(crop.width * sk); small.height = Math.round(crop.height * sk);
+          small.getContext('2d').drawImage(crop, 0, 0, small.width, small.height);
+          const [v] = await visionRecognize([small], 'orient', 15000);   // [右, 下, 左, 上] への票数
+          const tot = v.reduce((a, b) => a + b, 0), bi = v.indexOf(Math.max(...v));
+          if (tot >= 6 && v[bi] >= tot * 0.6) return [0, 3, 2, 1][bi];   // 下=右に倒れている→左へ90°(時計回り3回)など
+        }
+      } catch (err) { console.error(err); }
+    }
     const wk = await getWorker();
     await wk.setParameters({ tessedit_pageseg_mode: '11' }); workerPsm = null;
     const score = {};
@@ -1059,6 +1073,7 @@
     if (!d || (d.type !== 'ocr-result' && d.type !== 'ocr-pong') || !visionWait.has(d.id)) return;
     const w = visionWait.get(d.id); visionWait.delete(d.id); clearTimeout(w.timer);
     if (d.type === 'ocr-pong') w.resolve(!!d.ok);
+    else if (Array.isArray(d.votes)) w.resolve(d.votes);
     else if (Array.isArray(d.texts)) w.resolve(d.texts); else w.reject(new Error(d.error || '失敗'));
   });
   // 使えるか確認する。Macがスリープ中・Corkboardのタブが閉じられている・応答がない場合は false
@@ -1073,14 +1088,14 @@
     });
   }
   // 画像(キャンバス)の配列を送り、同じ順の認識結果(文字列の配列)を受け取る
-  async function visionRecognize(canvases) {
+  async function visionRecognize(canvases, mode, limitMs = 70000) {
     if (!window.opener || window.opener.closed) throw new Error('Corkboard Share のタブが閉じられています');
     const blobs = await Promise.all(canvases.map(c => new Promise(r => c.toBlob(r, 'image/png'))));
     const id = ++visionSeq;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { visionWait.delete(id); reject(new Error('応答がありません')); }, 70000);
+      const timer = setTimeout(() => { visionWait.delete(id); reject(new Error('応答がありません')); }, limitMs);
       visionWait.set(id, { resolve, reject, timer });
-      try { window.opener.postMessage({ type: 'ocr-request', id, images: blobs }, CORK_ORIGIN); }
+      try { window.opener.postMessage({ type: 'ocr-request', id, images: blobs, mode }, CORK_ORIGIN); }
       catch (err) { visionWait.delete(id); clearTimeout(timer); reject(err); }
     });
   }
