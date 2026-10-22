@@ -84,6 +84,13 @@
   #result td.c .bc .ok { color: #16a34a; font-size: 11px; }
   #result td.c .bc .ng { color: #e11d48; font-size: 11px; }
   #result td.c.stale { background: var(--warn); }
+  #result th.ch { cursor: pointer; user-select: none; }
+  #result th.ch:hover { color: var(--ink); background: #dfe7ef; }
+  #result th.ch.off, #result td.c.off { min-width: 0; width: 30px; max-width: 30px; padding: 0; overflow: hidden; }
+  #result th.ch.off { opacity: .6; text-decoration: line-through; }
+  #result td.c.off > * { display: none; }
+  #result td.c.off { background: repeating-linear-gradient(45deg, var(--bg), var(--bg) 4px, transparent 4px, transparent 8px); }
+  #result th.rn.all { cursor: pointer; color: var(--ink); text-decoration: underline; }
   /* 原画 */
   #stage { position: relative; display: inline-block; user-select: none; -webkit-user-select: none; }
   #stage img { display: block; max-width: none; image-rendering: auto; }
@@ -161,6 +168,9 @@
       <button id="bcOn" type="button" aria-pressed="true" title="JANコードの列に、バーコードとチェックデジットの確認を付けます">あり</button>
       <button id="bcOff" type="button" aria-pressed="false" title="バーコード列として扱わず、ふつうの文字・数字として扱います">なし</button>
     </span>
+    <label class="opt" id="bcPosWrap" title="Excel・PDFに、バーコードだけの列を指定の位置へ挿入します。空欄なら、JANの数字と同じセルに表示します">
+      <input type="number" id="bcPos" min="1" step="1" placeholder="空欄" style="width:62px;padding:5px 6px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:14px;background:var(--panel);color:var(--ink)"> 列目に挿入
+    </label>
   </div>
   <div class="row">
     <span class="lbl">仕切り</span>
@@ -363,7 +373,7 @@
     srcCanvas = canvas; srcCtx = canvas.getContext('2d', { willReadFrequently: true });
     natW = canvas.width; natH = canvas.height;
     const b = await new Promise(r => canvas.toBlob(r, 'image/png'));
-    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null;
+    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; hiddenCols.clear();
     buildStage(URL.createObjectURL(b));
     fitZoom(); renderAll();
   }
@@ -423,7 +433,7 @@
         const b = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
         URL.revokeObjectURL(url); url = URL.createObjectURL(b);
       }
-      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null;
+      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; hiddenCols.clear();
       buildStage(url);
       fitZoom();
       renderAll();
@@ -627,16 +637,37 @@
   }
   function renderAll() { renderOverlay(); renderResult(); updateButtons(); }
 
+  // 認識結果の列の表示/非表示(非表示の列は、Excel・PDF・コピーにも含めない)
+  let hiddenCols = new Set(), hiddenN = 0;
+  function toggleCol(c, n) {
+    if (hiddenCols.has(c)) hiddenCols.delete(c);
+    else {
+      if (hiddenCols.size + 1 >= n) { msg('すべての列を非表示にはできません。'); return; }
+      hiddenCols.add(c);
+    }
+    hiddenN = n; renderResult();
+    msg(hiddenCols.has(c) ? `${c + 1}列目を非表示にしました(Excel・PDF・コピーにも含めません)。見出しをクリックで再表示。` : `${c + 1}列目を表示しました。`);
+  }
   function renderResult() {
     const wrap = $('resultWrap');
     const g = grid();
     if (!g) { wrap.innerHTML = '<div class="empty">原画で表の範囲をドラッグしてください。</div>'; $('dims').textContent = ''; return; }
     const { xs, ys } = g;
-    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列`;
+    if (hiddenN !== xs.length - 1) hiddenCols.clear();   // 列の数が変わったら、非表示の指定は解除
+    $('dims').textContent = `${ys.length - 1}行 × ${xs.length - 1}列` + (hiddenCols.size ? `(非表示 ${hiddenCols.size}列)` : '');
     const tbl = document.createElement('table'); tbl.id = 'result';
     const head = tbl.createTHead().insertRow();
-    head.insertCell().outerHTML = '<th class="rn"></th>';
-    for (let c = 0; c < xs.length - 1; c++) head.insertCell().outerHTML = `<th>${c + 1}</th>`;
+    const thRn = document.createElement('th'); thRn.className = 'rn'; head.append(thRn);
+    if (hiddenCols.size) {
+      thRn.classList.add('all'); thRn.textContent = '全表示'; thRn.title = '非表示の列をすべて表示します';
+      thRn.onclick = () => { hiddenCols.clear(); renderResult(); msg('すべての列を表示しました。'); };
+    }
+    for (let c = 0; c < xs.length - 1; c++) {
+      const th = document.createElement('th'); th.className = 'ch' + (hiddenCols.has(c) ? ' off' : '');
+      th.textContent = String(c + 1); th.title = hiddenCols.has(c) ? 'クリックで表示' : 'クリックで非表示(Excel・PDF・コピーにも含めません)';
+      th.onclick = () => toggleCol(c, xs.length - 1);
+      head.append(th);
+    }
     const body = tbl.createTBody();
     for (let r = 0; r < ys.length - 1; r++) {
       const tr = body.insertRow();
@@ -644,7 +675,7 @@
       for (let c = 0; c < xs.length - 1; c++) {
         const rect = { x: xs[c], y: ys[r], w: xs[c + 1] - xs[c], h: ys[r + 1] - ys[r] };
         const key = keyOf(rect.x, rect.y, rect.w, rect.h);
-        const td = tr.insertCell(); td.className = 'c';
+        const td = tr.insertCell(); td.className = 'c' + (hiddenCols.has(c) ? ' off' : '');
         td.dataset.key = key; td.dataset.r = r; td.dataset.c = c;
         const t = document.createElement('span'); t.className = 't'; t.contentEditable = 'plaintext-only';
         const bc = document.createElement('div'); bc.className = 'bc'; bc.contentEditable = 'false';
@@ -679,13 +710,32 @@
   function setBarcodeMode(on, save = true) {
     barcodeOn = on;
     $('bcOn').setAttribute('aria-pressed', String(on)); $('bcOff').setAttribute('aria-pressed', String(!on));
+    $('bcPosWrap').hidden = !on;
     if (save) { try { localStorage.setItem('barcodeCol', on ? 'on' : 'off'); } catch (e) { /* 無視 */ } }
     renderResult();
     if (save) msg(on ? 'バーコード列: あり(JANコードにバーコードとチェックデジット確認を付けます)' : 'バーコード列: なし(JANコードも通常の文字・数字として扱います)');
   }
-  $('bcOn').setAttribute('aria-pressed', String(barcodeOn)); $('bcOff').setAttribute('aria-pressed', String(!barcodeOn));
+  $('bcOn').setAttribute('aria-pressed', String(barcodeOn)); $('bcOff').setAttribute('aria-pressed', String(!barcodeOn)); $('bcPosWrap').hidden = !barcodeOn;
+  // バーコード専用の列を挿入する位置(1始まり)。空欄(null)なら、JANの数字と同じセルに表示する
+  function bcInsertIndex(nCols) {
+    if (!barcodeOn) return null;
+    const n = parseInt($('bcPos').value, 10);
+    return n >= 1 ? Math.min(n - 1, nCols) : null;
+  }
+  try { const v = localStorage.getItem('barcodeColPos'); if (v) $('bcPos').value = v; } catch (e) { /* 無視 */ }
+  $('bcPos').onchange = () => {
+    const n = parseInt($('bcPos').value, 10);
+    if (!(n >= 1)) $('bcPos').value = '';
+    try { localStorage.setItem('barcodeColPos', $('bcPos').value); } catch (e) { /* 無視 */ }
+    msg($('bcPos').value ? `Excel・PDFでは、${$('bcPos').value}列目にバーコード専用の列を挿入します(列数を超えたら末尾)。` : 'バーコードは、JANの数字と同じセルに表示します。');
+  };
   $('bcOn').onclick = () => setBarcodeMode(true);
   $('bcOff').onclick = () => setBarcodeMode(false);
+  // 行の中の最初の有効なJAN(チェックデジットが合うもの)
+  function rowJan(r) {
+    for (const v of r) { const j = findJan(v); if (j && janCheck(j).ok) return j; }
+    return null;
+  }
   function findJan(text) {
     if (!barcodeOn) return null;
     const m = text.match(/(?<![\d])(?:\d[ \-‐ー−]?){12}\d(?![\d])/);
@@ -939,6 +989,7 @@
       for (let c = 0; c < g.xs.length - 1; c++) row.push(cache.get(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r])) || '');
       rows.push(row);
     }
+    if (hiddenCols.size) rows = rows.map(r => r.filter((_, c) => !hiddenCols.has(c)));
     if ($('optTrim').checked) {
       rows = rows.filter(r => r.some(v => v.trim()));
       const keep = (rows[0] || []).map((_, c) => rows.some(r => r[c].trim()));
@@ -955,11 +1006,14 @@
     if (!window.ExcelJS) { msg('Excel出力の部品を読み込めませんでした。ネット接続を確認して再読み込みしてください。'); return; }
     try {
       const wb = new ExcelJS.Workbook(); const ws = wb.addWorksheet('表');
+      const bcIdx = bcInsertIndex(rows[0].length), sep = bcIdx !== null;
+      const jans = rows.map(rowJan);
+      if (sep) rows.forEach(r => r.splice(bcIdx, 0, ''));   // バーコード専用の列を挿入
       const nCols = rows[0].length;
       const widths = Array.from({ length: nCols }, (_, c) => {
         let m = 6;
-        for (const r of rows) m = Math.max(m, Math.min(60, cellWidth(r[c] || '') + 2), findJan(r[c] || '') ? 26 : 0);
-        return m;
+        for (const r of rows) m = Math.max(m, Math.min(60, cellWidth(r[c] || '') + 2), !sep && findJan(r[c] || '') ? 26 : 0);
+        return sep && c === bcIdx ? 26 : m;
       });
       ws.columns = widths.map(w => ({ width: w }));
       const thin = { style: 'thin', color: { argb: 'FFB0B7C3' } };
@@ -980,7 +1034,7 @@
           if (jan) {
             const { ok } = janCheck(jan);
             if (!ok) cell.font = { color: { argb: 'FFD00000' }, bold: true };
-            else {
+            else if (!sep) {
               try {
                 const cv = document.createElement('canvas');
                 JsBarcode(cv, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 40, width: 2, margin: 4, displayValue: false, flat: true });
@@ -991,6 +1045,15 @@
             }
           }
         });
+        if (sep && jans[i]) {
+          try {
+            const cv = document.createElement('canvas');
+            JsBarcode(cv, jans[i], { format: jans[i].length === 13 ? 'EAN13' : 'EAN8', height: 40, width: 2, margin: 4, displayValue: false, flat: true });
+            const id = wb.addImage({ base64: cv.toDataURL('image/png'), extension: 'png' });
+            ws.addImage(id, { tl: { col: bcIdx + 0.04, row: i + 0.48 }, ext: { width: 160, height: 28 } });
+            tall = true; nBar++;
+          } catch (e) { /* 描画不可は無視 */ }
+        }
         if (tall) row.height = 50;
       });
       const buf = await wb.xlsx.writeBuffer();
@@ -1018,6 +1081,9 @@
     const bcH = Math.max(3, rowH - 3.2);
     const pageW = land ? 277 : 190;
     $('pageStyle').textContent = `@page { size: A4 ${land ? 'landscape' : 'portrait'}; margin: 10mm; }`;
+    const bcIdx = rows[0] ? bcInsertIndex(rows[0].length) : null, sep = bcIdx !== null;
+    const jans = rows.map(rowJan);
+    if (sep) rows.forEach(r => r.splice(bcIdx, 0, ''));   // バーコード専用の列を挿入
     const nCols = rows[0] ? rows[0].length : 0;
     // 列幅は内容の長さに比例(全角は2文字分)
     const wts = Array.from({ length: nCols }, (_, c) => {
@@ -1025,16 +1091,16 @@
       for (const r of rows) {
         const v = r[c] || '';
         const len = [...v].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 2 : 1), 0);
-        m = Math.max(m, Math.min(len, 40), findJan(v) ? 15 : 0);
+        m = Math.max(m, Math.min(len, 40), !sep && findJan(v) ? 15 : 0);
       }
       return m;
     });
     // JAN列は「数字+バーコード」を横並びにするため、最低幅(約60mm)を確保
-    const janCol = Array.from({ length: nCols }, (_, c) => rows.some(r => findJan(r[c] || '')));
+    const janCol = Array.from({ length: nCols }, (_, c) => sep ? c === bcIdx : rows.some(r => findJan(r[c] || '')));
     const fr = wts.map((w, c) => w);
     const total = fr.reduce((a, b) => a + b, 0);
     let fracs = fr.map(w => w / total);
-    const minJan = 60 / pageW;
+    const minJan = (sep ? 40 : 60) / pageW;   // バーコード専用列は約40mm
     const fixed = fracs.map((f, c) => janCol[c] ? Math.max(f, minJan) : f);
     const fixedSum = fixed.reduce((a, b) => a + b, 0);
     const janSum = fixed.reduce((a, f, c) => a + (janCol[c] ? f : 0), 0);
@@ -1052,13 +1118,16 @@
       tbl.append(cg);
       for (let i = p * ROWS_PER_PAGE; i < Math.min(rows.length, (p + 1) * ROWS_PER_PAGE); i++) {
         const tr = tbl.insertRow(); tr.style.height = rowH + 'mm';
-        for (const v of rows[i]) {
+        for (let c = 0; c < rows[i].length; c++) {
+          const v = rows[i][c];
           const td = tr.insertCell(); const t = document.createElement('span'); t.className = 't'; t.textContent = v;
           const box = document.createElement('div'); box.className = 'cb'; box.append(t); td.append(box);
-          const jan = findJan(v);
+          const isBc = sep && c === bcIdx;
+          const jan = isBc ? jans[i] : findJan(v);
           if (!jan) continue;
           const { ok } = janCheck(jan);
           if (!ok) { t.classList.add('bad'); continue; }
+          if (sep && !isBc) continue;   // 専用列があるときは、数字のセルにはバーコードを付けない
           const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           try {
             JsBarcode(svg, jan, { format: jan.length === 13 ? 'EAN13' : 'EAN8', height: 40, margin: 0, displayValue: false, flat: true });
@@ -1100,7 +1169,7 @@
   }
   window.addEventListener('resize', () => { if (img) setZoom(zoom); });
   // テスト用フック
-  window.__app = { loadBlob, estimateSkew, detectOrientation, rotateQuarter, buildPrint, fill: m => { const g = grid(); m.forEach((row, r) => row.forEach((v, c) => cache.set(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r]), v))); renderResult(); }, state: () => ({ roi, hLines, vLines, cache: [...cache] }), setRoi: r => { roi = r; runAuto(); } };
+  window.__app = { loadBlob, matrix, estimateSkew, detectOrientation, rotateQuarter, buildPrint, fill: m => { const g = grid(); m.forEach((row, r) => row.forEach((v, c) => cache.set(keyOf(g.xs[c], g.ys[r], g.xs[c + 1] - g.xs[c], g.ys[r + 1] - g.ys[r]), v))); renderResult(); }, state: () => ({ roi, hLines, vLines, cache: [...cache] }), setRoi: r => { roi = r; runAuto(); } };
 })();
 </script>
 <div id="printArea"></div>
