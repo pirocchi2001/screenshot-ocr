@@ -758,11 +758,13 @@
 
   // ---- OCR ----
   function cleanText(t) {
+    t = t.replace(/[①-⑳㉑-㉟]/g, ch => String(ch.codePointAt(0) <= 0x2473 ? ch.codePointAt(0) - 0x245F : ch.codePointAt(0) - 0x3250 + 21));
     const cjk = '\\u3000-\\u30ff\\u3400-\\u9fff\\uff00-\\uffef';
     return t.replace(/[ \t]*\r?\n[ \t]*/g, ' ').trim()
       .replace(new RegExp(`(?<=[${cjk}])\\s+(?=[${cjk}])`, 'g'), '')
       .replace(/\s{2,}/g, ' ');
   }
+  const CIRCLED = '①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳㉑㉒㉓㉔㉕㉖㉗㉘㉙㉚❶❷❸❹❺❻❼❽❾❿⓪⓿';
   async function getWorker() {
     const model = $('model').value;
     if (worker && workerModel === model) return worker;
@@ -774,7 +776,8 @@
       langPath,
       logger: m => { if (/loading|initializing/.test(m.status)) setBar(m.progress); },
     });
-    await worker.setParameters({ preserve_interword_spaces: '1' });
+    // 半角の数字が丸数字(④⑨など)に誤認識されるのを防ぐ
+    await worker.setParameters({ preserve_interword_spaces: '1', tessedit_char_blacklist: CIRCLED });
     workerModel = model; workerPsm = null;
     return worker;
   }
