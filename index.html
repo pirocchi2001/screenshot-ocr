@@ -577,7 +577,8 @@
     const gray = new Uint8Array(w * h);
     for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = (d[j] * 299 + d[j + 1] * 587 + d[j + 2] * 114) / 1000;
     const bg = TableDetect.modeGray(gray);
-    const mx = Math.round(w * 0.02), my = Math.round(h * 0.02);
+    // 縁のごく細い帯(影・撮影の縁)だけ無視する。スクショは表の外枠が画像の端に近いので、広く除くと表を取りこぼす
+    const mx = Math.max(1, Math.round(w * 0.007)), my = Math.max(1, Math.round(h * 0.007));
     const rows = new Uint32Array(h), cols = new Uint32Array(w);
     for (let y = my; y < h - my; y++) for (let x = mx; x < w - mx; x++) if (Math.abs(gray[y * w + x] - bg) > TableDetect.INK_T) { rows[y]++; cols[x]++; }
     const tr = Math.max(2, Math.round(w * 0.004)), tc = Math.max(2, Math.round(h * 0.004));
