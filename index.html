@@ -105,6 +105,19 @@
   .ln.h::after { left: 0; right: 0; top: 4px; border-top: 2px dashed var(--hline); }
   .ln.v::after { top: 0; bottom: 0; left: 4px; border-left: 2px dashed var(--vline); }
   .ln:hover::after { border-style: solid; }
+  /* 自動で追加した線が分割する範囲を示す矢印(縦線は上、横線は左) */
+  .sa { position: absolute; display: flex; align-items: center; gap: 3px; box-sizing: border-box; pointer-events: auto; cursor: pointer;
+    font-size: 11px; line-height: 1; opacity: .5; z-index: 5; user-select: none; }
+  .sa:hover { opacity: .85; }
+  .sa.on { opacity: 1; font-weight: 700; }
+  .sa.v { color: var(--vline); height: 18px; flex-direction: row; }
+  .sa.h { color: var(--hline); width: 18px; flex-direction: column; }
+  .sa i { flex: 1 1 0; min-width: 0; min-height: 0; }
+  .sa.v i { border-top: 2px solid currentColor; }
+  .sa.h i { border-left: 2px solid currentColor; }
+  .sa.on i { border-width: 3px; }
+  .sa b { white-space: nowrap; background: var(--panel, #fff); padding: 1px 4px; border-radius: 4px; font-weight: 700; }
+  .sa.h b { writing-mode: vertical-rl; padding: 4px 1px; }
   .hd { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px; background: var(--roi); border: 1px solid #fff; border-radius: 2px; }
   .empty { padding: 40px 20px; text-align: center; color: var(--sub); }
   .empty kbd { background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
@@ -195,7 +208,7 @@
     <h2><span>原画</span><span class="grow"></span>
       <button id="btnRotL" title="左(反時計回り)に90°回転">↺</button><button id="btnRotR" title="右(時計回り)に90°回転">↻</button><button id="btnOrient" title="文字の向きを調べて、自動で正しい向きに直す">向きを自動判定</button><button id="btnPersp" title="斜めから撮った紙の台形ゆがみを、正面に直す">歪み補正</button><button id="btnAutoTbl" title="表の範囲と行・列の分割を自動で決めます">表を自動検出</button><span style="width:8px"></span><button id="zOut" class="zb" title="縮小">−</button><span id="zv" style="min-width:42px;text-align:center">100%</span><button id="zIn" class="zb" title="拡大">＋</button><button id="z100" title="等倍(100%)">100%</button><button id="zFit" title="ウィンドウ幅に合わせる">全体</button></h2>
     <div class="scroll" id="imgWrap"><div class="empty"><kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>V</kbd> でスクリーンショットを貼り付け<br>またはファイルをここにドロップ</div></div>
-    <div class="help">ドラッグで表の範囲を指定 / 線をドラッグで移動・ダブルクリックで削除 / ＋横線・＋縦線のあと原画をクリックで追加 / Ctrl+ホイールで拡大縮小</div>
+    <div class="help">ドラッグで表の範囲を指定 / 線をドラッグで移動・ダブルクリックで削除 / ＋横線・＋縦線で自動配置(矢印の範囲を分割。別の範囲は矢印をクリック) / Ctrl+ホイールで拡大縮小</div>
   </section>
 </main>
 
@@ -211,6 +224,7 @@
   let hLines = [], vLines = [];    // 画像px(絶対座標)
   let cache = new Map();           // セル矩形キー → テキスト
   let addMode = null;              // 'h' | 'v' | null
+  let pending = null;              // 自動で追加した直後の線 {k:'h'|'v', i: 配列の添字}。分割する範囲の矢印を出す
   let hlRect = null;               // 左表のホバー強調
   let worker = null, workerModel = null, workerPsm = null, busy = false;
   let img = null, ov = null, stage = null;
@@ -550,7 +564,7 @@
     srcCanvas = canvas; srcCtx = canvas.getContext('2d', { willReadFrequently: true });
     natW = canvas.width; natH = canvas.height;
     const b = await new Promise(r => canvas.toBlob(r, 'image/png'));
-    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; hiddenCols.clear();
+    roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear();
     buildStage(URL.createObjectURL(b));
     fitZoom(); renderAll();
   }
@@ -628,7 +642,7 @@
         const b = await new Promise(r => srcCanvas.toBlob(r, 'image/png'));
         URL.revokeObjectURL(url); url = URL.createObjectURL(b);
       }
-      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; hiddenCols.clear();
+      roi = null; hLines = []; vLines = []; cache = new Map(); addMode = null; hlRect = null; pending = null; hiddenCols.clear();
       buildStage(url);
       fitZoom();
       renderAll();
@@ -714,6 +728,80 @@
     if (extra) Object.assign(d.dataset, extra);
     return d;
   }
+  // 追加した線が分割する範囲を示す矢印
+  function renderArrows() {
+    if (!pending || !roi) return;
+    const arr = pending.k === 'h' ? hLines : vLines;
+    if (arr[pending.i] === undefined) { pending = null; return; }
+    const cur = arr[pending.i];
+    const lo = pending.k === 'h' ? roi.y : roi.x, hi = lo + (pending.k === 'h' ? roi.h : roi.w);
+    const cuts = [lo, ...arr.filter((_, j) => j !== pending.i).filter(v => v > lo && v < hi).sort((a, b) => a - b), hi];
+    for (let s = 0; s < cuts.length - 1; s++) {
+      const a = cuts[s], b = cuts[s + 1], on = cur > a && cur < b;
+      let d;
+      if (pending.k === 'v') {
+        const out = roi.y * zoom > 26;   // 上に余白があれば枠の外、なければ枠の内側
+        d = div('sa v' + (on ? ' on' : ''), a, 0, b - a, null, { k: 'seg', s });
+        d.style.top = (out ? roi.y * zoom - 22 : roi.y * zoom + 3) + 'px';
+        d.innerHTML = '<span>◀</span><i></i>' + (on && (b - a) * zoom > 110 ? '<b>この列を分割</b><i></i>' : '') + '<span>▶</span>';
+      } else {
+        const out = roi.x * zoom > 26;
+        d = div('sa h' + (on ? ' on' : ''), 0, a, null, b - a, { k: 'seg', s });
+        d.style.left = (out ? roi.x * zoom - 22 : roi.x * zoom + 3) + 'px';
+        d.innerHTML = '<span>▲</span><i></i>' + (on && (b - a) * zoom > 110 ? '<b>この行を分割</b><i></i>' : '') + '<span>▼</span>';
+      }
+      d.title = on ? 'この範囲を分割しています(線をドラッグで微調整)' : 'クリックで、この範囲を分割する位置に移します';
+      ov.append(d);
+    }
+  }
+  // 範囲 [a,b] の中で、文字のない隙間(一番長いもの)の中央を返す。隙間がなければ、中央付近で一番インクの少ない位置
+  function autoSplitPos(k, a, b) {
+    const vert = k === 'v';
+    const x = vert ? Math.round(a) : roi.x, y = vert ? roi.y : Math.round(a);
+    const w = vert ? Math.round(b - a) : roi.w, h = vert ? roi.h : Math.round(b - a);
+    const gray = grayOf(x, y, w, h), bg = TableDetect.modeGray(gray);
+    const n = vert ? w : h, m = vert ? h : w, ink = new Uint32Array(n);
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) if (Math.abs(gray[yy * w + xx] - bg) > TableDetect.INK_T) ink[vert ? xx : yy]++;
+    const thr = Math.max(1, Math.round(m * 0.004)), edge = Math.round(n * 0.08);
+    let bestLen = 0, bestC = -1, run = 0;
+    for (let i = 0; i <= n; i++) {
+      if (i < n && ink[i] <= thr) { run++; continue; }
+      if (run >= 2) {
+        const c = i - run / 2;
+        if (c > edge && c < n - edge && (run > bestLen || (run === bestLen && Math.abs(c - n / 2) < Math.abs(bestC - n / 2)))) { bestLen = run; bestC = c; }
+      }
+      run = 0;
+    }
+    if (bestC < 0) {   // 隙間がない: 中央付近(30〜70%)で、インクが最も少ない位置
+      let mi = Math.round(n * 0.5), mv = 1e9;
+      for (let i = Math.round(n * 0.3); i <= Math.round(n * 0.7); i++) if (ink[i] < mv || (ink[i] === mv && Math.abs(i - n / 2) < Math.abs(mi - n / 2))) { mv = ink[i]; mi = i; }
+      bestC = mi;
+    }
+    return r2(a + bestC);
+  }
+  // 線を自動で追加する。分割するのは、いちばん広い列(行)
+  function addLineAuto(k) {
+    if (!roi) return;
+    const g = grid(), cuts = k === 'v' ? g.xs : g.ys;
+    let bi = -1, bw = 0;
+    for (let s = 0; s < cuts.length - 1; s++) if (cuts[s + 1] - cuts[s] > bw) { bw = cuts[s + 1] - cuts[s]; bi = s; }
+    if (bi < 0 || bw < 16) { msg('これ以上、分割できる範囲がありません。'); return; }
+    const pos = autoSplitPos(k, cuts[bi], cuts[bi + 1]);
+    const arr = k === 'v' ? vLines : hLines;
+    arr.push(pos); pending = { k, i: arr.length - 1 };
+    changed();
+    msg(`${k === 'v' ? '縦線' : '横線'}を自動で追加しました。矢印の範囲を分割しています。別の${k === 'v' ? '列' : '行'}にしたいときは、その矢印をクリック。位置は線のドラッグで調整できます。`);
+  }
+  // 追加した線を、別の範囲(矢印)に移す
+  function retarget(s) {
+    if (!pending || !roi) return;
+    const arr = pending.k === 'h' ? hLines : vLines;
+    const lo = pending.k === 'h' ? roi.y : roi.x, hi = lo + (pending.k === 'h' ? roi.h : roi.w);
+    const cuts = [lo, ...arr.filter((_, j) => j !== pending.i).filter(v => v > lo && v < hi).sort((a, b) => a - b), hi];
+    if (!(s >= 0 && s < cuts.length - 1) || cuts[s + 1] - cuts[s] < 16) return;
+    arr[pending.i] = autoSplitPos(pending.k, cuts[s], cuts[s + 1]);
+    changed();
+  }
   function renderOverlay() {
     if (!ov) return;
     ov.replaceChildren();
@@ -722,6 +810,7 @@
     ov.append(div('roi', roi.x - 1 / zoom * 2, roi.y - 1 / zoom * 2, roi.w, roi.h));
     if (hlRect) ov.append(div('hl', hlRect.x, hlRect.y, hlRect.w, hlRect.h));
     hLines.forEach((y, i) => ov.append(div('ln h', roi.x, y, roi.w, null, { k: 'h', i })));
+    renderArrows();
     vLines.forEach((x, i) => ov.append(div('ln v', x, roi.y, null, roi.h, { k: 'v', i })));
     const { x, y, w, h } = roi;
     const pts = { tl: [x, y], tr: [x + w, y], bl: [x, y + h], br: [x + w, y + h], t: [x + w / 2, y], b: [x + w / 2, y + h], l: [x, y + h / 2], r: [x + w, y + h / 2] };
@@ -739,7 +828,8 @@
     return { x: Math.min(natW, Math.max(0, (e.clientX - b.left) / zoom)), y: Math.min(natH, Math.max(0, (e.clientY - b.top) / zoom)) };
   };
   function onDown(e) {
-    const p = pt(e), t = e.target.dataset || {};
+    const p = pt(e), el = e.target.closest ? e.target.closest('[data-k]') : null, t = el ? el.dataset : {};
+    if (t.k === 'seg') { retarget(+t.s); return; }
     ov.setPointerCapture(e.pointerId);
     if (addMode && roi) {
       if (addMode === 'h' && p.y > roi.y && p.y < roi.y + roi.h) hLines.push(p.y);
@@ -747,8 +837,8 @@
       addMode = null; changed(); return;
     }
     if (t.k === 'h' || t.k === 'v') drag = { type: 'line', k: t.k, i: +t.i };
-    else if (t.k === 'hd') drag = { type: 'resize', n: t.n };
-    else drag = { type: 'new', x0: p.x, y0: p.y };
+    else if (t.k === 'hd') { drag = { type: 'resize', n: t.n }; pending = null; }
+    else { drag = { type: 'new', x0: p.x, y0: p.y }; pending = null; }
   }
   function onMove(e) {
     if (!drag) return;
@@ -790,10 +880,11 @@
     if (t.k === 'h') hLines.splice(+t.i, 1);
     else if (t.k === 'v') vLines.splice(+t.i, 1);
     else return;
+    pending = null;
     changed();
   }
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { addMode = null; renderOverlay(); }
+    if (e.key === 'Escape') { addMode = null; pending = null; renderOverlay(); }
   });
 
   // ---- 自動分割 ----
@@ -816,10 +907,10 @@
     const gr = grid();
     msg(`自動分割: ${gr.ys.length - 1}行 × ${gr.xs.length - 1}列。線をドラッグして調整できます。`);
   }
-  $('btnAuto').onclick = runAuto;
-  $('btnClear').onclick = () => { hLines = []; vLines = []; changed(); };
-  $('btnAddH').onclick = () => { addMode = addMode === 'h' ? null : 'h'; renderOverlay(); if (addMode) msg('横線を入れる位置を原画上でクリックしてください (Escで中止)。'); };
-  $('btnAddV').onclick = () => { addMode = addMode === 'v' ? null : 'v'; renderOverlay(); if (addMode) msg('縦線を入れる位置を原画上でクリックしてください (Escで中止)。'); };
+  $('btnAuto').onclick = () => { pending = null; runAuto(); };
+  $('btnClear').onclick = () => { hLines = []; vLines = []; pending = null; changed(); };
+  $('btnAddH').onclick = () => { addMode = null; addLineAuto('h'); };
+  $('btnAddV').onclick = () => { addMode = null; addLineAuto('v'); };
   for (const [id, out, f] of [['rowGap', 'rowGapV', v => v + 'px'], ['colK', 'colKV', v => (+v).toFixed(1) + '×']]) {
     $(id).oninput = () => { $(out).textContent = f($(id).value); };
     $(id).onchange = () => { if (roi) runAuto(); };
